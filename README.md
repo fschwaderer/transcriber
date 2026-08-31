@@ -67,6 +67,20 @@ Teste a saúde no navegador em <http://127.0.0.1:3210/health>. O resultado esper
 {"status":"ok"}
 ```
 
+### Iniciar automaticamente com o Windows
+
+Na pasta principal do projeto, execute `instalar-inicializacao-automatica.bat` uma vez. Ele cria um atalho na pasta **Inicializar** do usuário atual, sem exigir Visual Studio nem permissão de administrador, e inicia o servidor imediatamente.
+
+A cada login, `start-transcriber.bat` consulta o endpoint `/health`. Se o servidor já estiver funcionando, ele não abre outro processo; se estiver parado, instala as dependências que faltarem e o inicia em segundo plano. Os logs ficam em `%LOCALAPPDATA%\WhatsAppTranscriber`.
+
+Para desativar a inicialização automática, execute:
+
+```bat
+instalar-inicializacao-automatica.bat /remover
+```
+
+Se a pasta do projeto for movida, execute novamente o instalador para atualizar o caminho do atalho.
+
 Também é possível testar a rota simulada no PowerShell com qualquer arquivo de áudio:
 
 ```powershell
