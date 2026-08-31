@@ -1,0 +1,8 @@
+server/node_modules/
+server/.venv/
+server/models/
+server/temp/*
+!server/temp/.gitkeep
+*.log
+__pycache__/
+*.pyc
