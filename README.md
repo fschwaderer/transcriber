@@ -47,6 +47,7 @@ WHISPER_DEVICE=cpu
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_CPU_THREADS=0
 HF_HOME=./models/.cache
+HF_HUB_DISABLE_XET=1
 ```
 
 Inicie o servidor:
@@ -96,9 +97,30 @@ curl.exe -X POST -F "audio=@C:\caminho\para\audio.ogg;type=audio/ogg" http://127
 5. Confirme que os dois scripts estão habilitados e que o backend está em execução.
 6. Abra ou recarregue <https://web.whatsapp.com/>.
 
-Ao receber uma nova mensagem de voz, um painel no canto inferior direito deve passar por **Áudio recebido · Na fila**, **Transcrevendo...** e, por fim, exibir a transcrição real. No modo `mock`, o resultado será **Teste de transcrição recebido com sucesso.**. O console do navegador também mostrará logs com os prefixos `[TRANSCRIBER:*]`.
+Ao carregar o WhatsApp, o cabeçalho do painel mostra se o backend está conectado. Durante uma transcrição, ele também informa se o modelo Whisper está carregando ou pronto. Cada áudio passa pelas etapas **Na fila**, **Baixando áudio**, **Enviando ao backend** e **Transcrevendo no Whisper**, esta última com um contador de segundos.
+
+O botão **Logs** abre os últimos eventos do servidor dentro do próprio WhatsApp, incluindo recebimento do arquivo, carregamento do modelo, fila, conclusão e erros. O console do navegador continua mostrando logs com os prefixos `[TRANSCRIBER:*]`.
 
 Os dois userscripts se comunicam apenas dentro da aba usando `window.postMessage`. Essa separação é necessária porque WA-JS precisa do contexto da página (`@grant none`), enquanto o acesso HTTP local precisa de `GM_xmlhttpRequest`. O sistema processa somente mensagens novas do tipo `ptt` ou `audio`, ignora mensagens próprias, evita IDs duplicados e trabalha com um áudio por vez. Se o backend estiver desligado, o WhatsApp continua operando e o painel oferece **Tentar novamente**.
+
+### Mover o painel
+
+Arraste o cabeçalho **🎤 Transcritor** para mover o painel e acessar informações atrás dele. O botão **↺** no cabeçalho devolve o painel à posição original, no canto superior direito. Também é possível mover o painel minimizado; ao recarregar a página, ele volta à posição original.
+
+Para receber essa atualização, substitua o conteúdo do script **WhatsApp Audio Transcriber** no Tampermonkey pelo arquivo `browser/whatsapp-transcriber.user.js`, salve e recarregue o WhatsApp Web.
+
+### Transcrever áudios recebidos enquanto o programa estava parado
+
+Atualize **os dois userscripts** no Tampermonkey com os arquivos da pasta `browser` e recarregue o WhatsApp Web.
+
+1. Inicie o backend e abra a conversa desejada no WhatsApp Web.
+2. No painel, clique em **Buscar áudios da conversa**.
+3. Marque os áudios pela data, remetente e duração e clique em **Transcrever selecionados**.
+4. Para alcançar um período anterior, clique em **Buscar mais antigos**. Cada busca consulta até 100 mensagens, incluindo mensagens de texto; um lote sem áudios não significa que o histórico terminou.
+
+A busca inclui áudios recebidos já lidos e não depende de o Transcriber estar ativo no momento do recebimento. Ela usa o histórico disponível no WhatsApp Web; mídias apagadas ou indisponíveis para download não podem ser recuperadas pelo Transcriber. Buscar apenas lista as mensagens; o áudio é baixado e enviado ao backend ao entrar na fila.
+
+Áudios já na fila ou concluídos nesta sessão ficam desabilitados na seleção. Se uma tentativa falhar, é possível selecioná-la novamente ou usar **Tentar novamente** no painel. A fila e o controle de duplicados ficam em memória: recarregar a página inicia uma nova sessão. Ao mudar de conversa, clique novamente em **Buscar áudios da conversa**.
 
 ## Arquitetura
 
@@ -116,7 +138,8 @@ Os arquivos são mantidos em memória pelo Multer, limitados a 25 MB e não são
 
 ## Endpoints
 
-- `GET /health` — retorna o estado do servidor.
+- `GET /health` — retorna o estado do servidor, do worker Whisper e a quantidade de requisições pendentes.
+- `GET /diagnostics` — retorna o estado atual e os últimos eventos de diagnóstico em memória.
 - `POST /transcribe` — exige um arquivo de áudio no campo `audio` e retorna a transcrição configurada.
 
 Não coloque segredos no userscript. O `.env` incluído contém somente configurações locais e nenhuma chave de API.

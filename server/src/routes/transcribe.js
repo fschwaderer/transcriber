@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { transcribeAudio } from '../services/transcription.js';
+import { recordEvent } from '../services/diagnostics.js';
 
 const router = Router();
 const upload = multer({
@@ -20,6 +21,7 @@ router.post('/', upload.single('audio'), async (request, response, next) => {
       });
     }
 
+    recordEvent('info', 'HTTP', `Áudio recebido (${Math.round(request.file.size / 1024)} KB, ${request.file.mimetype}).`);
     const text = await transcribeAudio({
       buffer: request.file.buffer,
       mimetype: request.file.mimetype,
