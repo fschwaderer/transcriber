@@ -82,7 +82,7 @@ rem Executa o Node oculto e grava a saida em LocalAppData para facilitar diagnos
 set "TRANSCRIBER_SERVER_DIR=%SERVER_DIR%"
 set "TRANSCRIBER_STDOUT_LOG=%STDOUT_LOG%"
 set "TRANSCRIBER_STDERR_LOG=%STDERR_LOG%"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath 'node.exe' -ArgumentList 'src/index.js' -WorkingDirectory $env:TRANSCRIBER_SERVER_DIR -WindowStyle Hidden -RedirectStandardOutput $env:TRANSCRIBER_STDOUT_LOG -RedirectStandardError $env:TRANSCRIBER_STDERR_LOG"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath 'node.exe' -ArgumentList ('{0}{1}{0}' -f [char]34, (Join-Path $env:TRANSCRIBER_SERVER_DIR 'src\index.js')) -WorkingDirectory $env:TRANSCRIBER_SERVER_DIR -WindowStyle Hidden -RedirectStandardOutput $env:TRANSCRIBER_STDOUT_LOG -RedirectStandardError $env:TRANSCRIBER_STDERR_LOG"
 if errorlevel 1 (
     echo [TRANSCRIBER] Nao foi possivel iniciar o processo Node.
     exit /b 1

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.4.1
+// @version      0.4.2
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
@@ -56,7 +56,7 @@
         cursor: pointer; font-size: 11px; line-height: 18px; }
       #wat-clear, #wat-toggle, #wat-reset-position { width: 25px; padding: 2px; font-size: 14px; }
       #wat-clear:hover, #wat-toggle:hover, #wat-logs-toggle:hover, #wat-reset-position:hover { color: #e9edef; background: #2a3942; }
-      #wat-list { overflow-y: auto; }
+      #wat-list { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
       #wat-panel.wat-collapsed #wat-list { display: none; }
       #wat-panel.wat-collapsed #wat-diagnostics { display: none; }
       #wat-panel.wat-collapsed #wat-connection { display: none; }
@@ -77,13 +77,17 @@
       #wat-diagnostics.open { display: block; }
       .wat-log { margin-bottom: 5px; overflow-wrap: anywhere; }
       .wat-log.error { color: #ff8a97; }
-      #wat-manual { padding: 8px 10px; border-bottom: 1px solid #374248; overflow-y: auto; flex: 0 1 auto; }
+      #wat-manual { padding: 8px 10px; border-bottom: 1px solid #374248; flex: 0 0 auto; }
+      #wat-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+      #wat-history-controls { display: flex; }
+      #wat-history-body { height: var(--wat-search-height, 260px); max-height: max(80px, calc(100vh - 310px)); overflow-y: auto; }
+      #wat-history-body[hidden] { display: none; }
       #wat-panel.wat-collapsed #wat-manual { display: none; }
       #wat-manual button { margin: 3px 3px 3px 0; padding: 6px 8px; border: 1px solid #46545d;
         border-radius: 5px; background: #2a3942; color: #e9edef; cursor: pointer; }
       #wat-manual button:disabled { opacity: .5; cursor: default; }
       #wat-history-status { font-size: 12px; color: #aebac1; white-space: pre-wrap; overflow-wrap: anywhere; }
-      #wat-history-list { max-height: 190px; overflow-y: auto; }
+      #wat-history-list { min-height: 0; }
       .wat-choice { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid #374248; font-size: 12px; }
       .wat-choice input { flex: 0 0 auto; }
     `;
@@ -105,17 +109,53 @@
         <span id="wat-connection" title="Estado do backend local">Verificando…</span>
       </div>
       <div id="wat-manual">
+        <div id="wat-history-heading">
+          <strong>Busca de áudios</strong>
+          <div id="wat-history-controls">
+            <button id="wat-history-smaller" type="button" aria-label="Reduzir altura da busca" title="Reduzir altura da busca">−</button>
+            <button id="wat-history-larger" type="button" aria-label="Aumentar altura da busca" title="Aumentar altura da busca">+</button>
+            <button id="wat-history-toggle" type="button" aria-controls="wat-history-body" aria-expanded="true">Recolher</button>
+          </div>
+        </div>
+        <div id="wat-history-body">
         <button id="wat-history-search" type="button">Buscar áudios da conversa</button>
         <div id="wat-history-status" role="status" aria-live="polite"></div>
         <div id="wat-history-list"></div>
         <button id="wat-history-more" type="button" hidden>Buscar mais antigos</button>
         <button id="wat-history-submit" type="button" disabled>Transcrever selecionados (0)</button>
+        </div>
       </div>
       <div id="wat-list"></div>
       <div id="wat-diagnostics" aria-live="polite"></div>
     `;
     document.body.appendChild(panel);
     setupPanelDragging(panel);
+    const historyBody = panel.querySelector('#wat-history-body');
+    const historyToggle = panel.querySelector('#wat-history-toggle');
+    const smaller = panel.querySelector('#wat-history-smaller');
+    const larger = panel.querySelector('#wat-history-larger');
+    let searchHeight = 260;
+    const updateSearchSize = () => {
+      historyBody.style.setProperty('--wat-search-height', `${searchHeight}px`);
+      historyToggle.textContent = historyBody.hidden ? 'Expandir' : 'Recolher';
+      historyToggle.setAttribute('aria-expanded', String(!historyBody.hidden));
+      smaller.disabled = historyBody.hidden || searchHeight <= 140;
+      larger.disabled = !historyBody.hidden && searchHeight >= 620;
+    };
+    historyToggle.addEventListener('click', () => {
+      historyBody.hidden = !historyBody.hidden;
+      updateSearchSize();
+    });
+    smaller.addEventListener('click', () => {
+      searchHeight = Math.max(140, searchHeight - 60);
+      updateSearchSize();
+    });
+    larger.addEventListener('click', () => {
+      historyBody.hidden = false;
+      searchHeight = Math.min(620, searchHeight + 60);
+      updateSearchSize();
+    });
+    updateSearchSize();
     panel.querySelector('#wat-history-search').addEventListener('click', () => searchHistory(false));
     panel.querySelector('#wat-history-more').addEventListener('click', () => searchHistory(true));
     panel.querySelector('#wat-history-list').addEventListener('change', updateHistorySelection);

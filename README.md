@@ -80,6 +80,10 @@ Para desativar a inicialização automática, execute:
 instalar-inicializacao-automatica.bat /remover
 ```
 
+Para parar o backend iniciado pelo `start-transcriber.bat`, execute **stop-transcriber.bat**. Ele encerra também o worker de transcrição; transcrições em andamento serão interrompidas. Para voltar a usar, execute `start-transcriber.bat` novamente. A parada não remove a inicialização automática no próximo login.
+
+O comando de parada identifica o servidor pelo caminho completo usado pelo BAT atualizado. Uma execução iniciada pelo BAT antigo deve ser encerrada uma vez pelo Gerenciador de Tarefas (processo Node.js deste servidor); para execuções manuais em um terminal, use **Ctrl+C**. Depois, inicie pelo BAT atualizado.
+
 Se a pasta do projeto for movida, execute novamente o instalador para atualizar o caminho do atalho.
 
 Também é possível testar a rota simulada no PowerShell com qualquer arquivo de áudio:
@@ -110,6 +114,8 @@ Arraste o cabeçalho **🎤 Transcritor** para mover o painel e acessar informa�
 Para receber essa atualização, substitua o conteúdo do script **WhatsApp Audio Transcriber** no Tampermonkey pelo arquivo `browser/whatsapp-transcriber.user.js`, salve e recarregue o WhatsApp Web.
 
 ### Transcrever áudios recebidos enquanto o programa estava parado
+
+No cabeçalho **Busca de áudios**, use **−** e **+** para ajustar a altura ou **Recolher / Expandir** para minimizar e restaurar somente a busca. A área mantém seu espaço mesmo com muitas transcrições, respeitando a altura da janela. As seleções são preservadas ao recolher; os ajustes de altura valem durante a sessão. Atualize o script **WhatsApp Audio Transcriber** no Tampermonkey e recarregue o WhatsApp Web para receber esses controles.
 
 Atualize **os dois userscripts** no Tampermonkey com os arquivos da pasta `browser` e recarregue o WhatsApp Web.
 
