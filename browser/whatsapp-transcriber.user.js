@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.4.2
+// @version      0.4.4
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
@@ -79,7 +79,7 @@
       .wat-log.error { color: #ff8a97; }
       #wat-manual { padding: 8px 10px; border-bottom: 1px solid #374248; flex: 0 0 auto; }
       #wat-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-      #wat-history-controls { display: flex; }
+      #wat-history-controls { display: flex; flex-shrink: 0; }
       #wat-history-body { height: var(--wat-search-height, 260px); max-height: max(80px, calc(100vh - 310px)); overflow-y: auto; }
       #wat-history-body[hidden] { display: none; }
       #wat-panel.wat-collapsed #wat-manual { display: none; }
@@ -110,15 +110,14 @@
       </div>
       <div id="wat-manual">
         <div id="wat-history-heading">
-          <strong>Busca de áudios</strong>
+          <button id="wat-history-search" type="button">Buscar áudios da conversa</button>
           <div id="wat-history-controls">
             <button id="wat-history-smaller" type="button" aria-label="Reduzir altura da busca" title="Reduzir altura da busca">−</button>
             <button id="wat-history-larger" type="button" aria-label="Aumentar altura da busca" title="Aumentar altura da busca">+</button>
-            <button id="wat-history-toggle" type="button" aria-controls="wat-history-body" aria-expanded="true">Recolher</button>
+            <button id="wat-history-toggle" type="button" aria-controls="wat-history-body" aria-expanded="false">Expandir</button>
           </div>
         </div>
-        <div id="wat-history-body">
-        <button id="wat-history-search" type="button">Buscar áudios da conversa</button>
+        <div id="wat-history-body" hidden>
         <div id="wat-history-status" role="status" aria-live="polite"></div>
         <div id="wat-history-list"></div>
         <button id="wat-history-more" type="button" hidden>Buscar mais antigos</button>
@@ -156,7 +155,11 @@
       updateSearchSize();
     });
     updateSearchSize();
-    panel.querySelector('#wat-history-search').addEventListener('click', () => searchHistory(false));
+    panel.querySelector('#wat-history-search').addEventListener('click', () => {
+      historyBody.hidden = false;
+      updateSearchSize();
+      searchHistory(false);
+    });
     panel.querySelector('#wat-history-more').addEventListener('click', () => searchHistory(true));
     panel.querySelector('#wat-history-list').addEventListener('change', updateHistorySelection);
     panel.querySelector('#wat-history-submit').addEventListener('click', () => {
