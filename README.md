@@ -65,7 +65,9 @@ Você pode arrastar o cabeçalho do painel para mudar sua posição. Use **↺**
 
 ## Exportar uma conversa com textos e áudios
 
-Mantenha os dois scripts do Tampermonkey atualizados: **WhatsApp Audio Transcriber 0.5.2** e **WA Bridge 0.4.1**. Após salvar os dois, recarregue o WhatsApp Web. O cabeçalho mostra separadamente o estado do backend e o da ponte do WhatsApp; para buscar mensagens, deve aparecer **WhatsApp: ponte pronta (0.4.1)**. Uma ponte ausente ou ainda carregando é indicada nesse mesmo local.
+Mantenha os dois scripts do Tampermonkey atualizados: **WhatsApp Audio Transcriber 0.5.3** e **WA Bridge 0.4.2**. Após salvar os dois, recarregue o WhatsApp Web. O cabeçalho mostra separadamente o estado do backend e o da ponte do WhatsApp; para buscar mensagens, deve aparecer **WhatsApp: ponte pronta (0.4.2)**. Uma ponte ausente ou ainda carregando é indicada nesse mesmo local.
+
+Se aparecer **ponte sem resposta**, o painel não conseguiu se comunicar com o script do WhatsApp; isso não depende do Python. As versões acima usam eventos do documento para atravessar os contextos isolados do Tampermonkey. A busca mostra se a ponte recebeu o pedido e se já está consultando o histórico. Se não houver confirmação, ela encerra em cinco segundos e libera os botões para tentar novamente.
 
 Depois de atualizar o programa, **atualize os dois scripts no Tampermonkey** pelos links da etapa 3 e recarregue o WhatsApp Web. Esta função não exige reinstalar Python ou Node.js.
 

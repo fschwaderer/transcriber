@@ -12,6 +12,8 @@ function setup({ chatId = '123@c.us', messages, contact = async () => ({ name: '
   const window = { addEventListener(_type, callback) { handler = callback; }, postMessage(data) { sent.push(data); } };
   vm.runInNewContext(bridge, {
     window, console,
+    document: { addEventListener() {}, dispatchEvent() {} },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     setTimeout(callback) { timers.set(++sequence, callback); return sequence; },
     clearTimeout(id) { timers.delete(id); },
     WPP: {

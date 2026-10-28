@@ -1,17 +1,34 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber - WA Bridge
 // @namespace    whatsapp-audio-transcriber
-// @version      0.4.1
+// @version      0.4.2
 // @description  Ponte WA-JS para o WhatsApp Audio Transcriber.
 // @match        https://web.whatsapp.com/*
 // @require      https://github.com/wppconnect-team/wa-js/releases/download/nightly/wppconnect-wa.js
 // @grant        none
+// @sandbox      raw
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   let ready = false;
+  const handledRequests = new Set();
+
+  function sendDomMessage(data) {
+    document.dispatchEvent(new CustomEvent('wat-wa-response', { detail: JSON.stringify(data) }));
+  }
+
+  function sendBridgeMessage(data) {
+    // JSON em eventos do documento atravessa os contextos isolados do Tampermonkey.
+    sendDomMessage(data);
+    window.postMessage(data, '*');
+  }
+
+  function reportProgress(request, message) {
+    sendBridgeMessage({ source: 'wat-wa-bridge', action: 'request-progress',
+      requestId: request.requestId, message });
+  }
 
   function messageId(message) {
     if (typeof message.id === 'string') return message.id;
@@ -56,12 +73,12 @@
   }
 
   function announceReady() {
-    window.postMessage({
+    sendBridgeMessage({
       source: 'wat-wa-bridge',
       action: 'ready',
-      bridgeVersion: '0.4.1',
+      bridgeVersion: '0.4.2',
       version: WPP.version
-    }, '*');
+    });
   }
 
   function serializedId(value) {
@@ -89,11 +106,17 @@
       timestamp: Number(message.t ?? message.timestamp) || 0 };
   }
 
-  window.addEventListener('message', async (event) => {
-    if (event.source !== window || event.data?.source !== 'wat-ui') return;
+  async function handleBridgeRequest(event) {
+    if (event.data?.source !== 'wat-ui') return;
+    const { requestId } = event.data;
+    if (requestId) {
+      if (handledRequests.has(requestId)) return;
+      handledRequests.add(requestId);
+      if (handledRequests.size > 200) handledRequests.delete(handledRequests.values().next().value);
+    }
 
     if (event.data.action === 'status') {
-      window.postMessage({ source: 'wat-wa-bridge', action: 'bridge-status', ready, bridgeVersion: '0.4.1' }, '*');
+      sendBridgeMessage({ source: 'wat-wa-bridge', action: 'bridge-status', ready, bridgeVersion: '0.4.2' });
       if (ready) announceReady();
       return;
     }
@@ -101,6 +124,7 @@
     if (event.data.action === 'conversation-history') {
       const response = { source: 'wat-wa-bridge', action: 'conversation-history-result', requestId: event.data.requestId };
       try {
+        reportProgress(event.data, 'Ponte recebeu a busca. Identificando a conversa aberta…');
         if (!ready) throw new Error('WhatsApp ainda está carregando. Aguarde e tente novamente.');
         const chat = WPP.chat.getActiveChat();
         if (!chat) throw new Error('Abra a conversa que deseja exportar.');
@@ -111,18 +135,21 @@
         }
         const options = { count: 100, direction: 'before' };
         if (event.data.before) options.id = event.data.before;
+        reportProgress(event.data, 'Consultando o histórico no WhatsApp…');
         const messages = await withTimeout(() => WPP.chat.getMessages(chatId, options), 20000,
           'O WhatsApp não respondeu à busca de mensagens. Recarregue a página e tente novamente.');
+        if (!Array.isArray(messages)) throw new Error('O WhatsApp devolveu um histórico inválido. Atualize os dois scripts.');
+        reportProgress(event.data, `${messages.length} mensagem(ns) recebida(s). Preparando textos e remetentes…`);
         // A ordem retornada pelo WhatsApp determina o cursor, inclusive quando
         // varias mensagens compartilham o mesmo segundo.
         messages.sort((a, b) => Number(a.t ?? a.timestamp ?? 0) - Number(b.t ?? b.timestamp ?? 0));
         const before = messages.length ? messageId(messages[0]) : null;
         const names = new Map();
         const records = (await Promise.all(messages.map(message => conversationDetails(message, chatId, names)))).filter(Boolean);
-        window.postMessage({ ...response, chatId, chatName: chat.name || chat.formattedTitle || chatId,
-          messages: records, before, hasMore: !!before && before !== event.data.before }, '*');
+        sendBridgeMessage({ ...response, chatId, chatName: String(chat.name || chat.formattedTitle || chatId),
+          messages: records, before, hasMore: !!before && before !== event.data.before });
       } catch (error) {
-        window.postMessage({ ...response, error: error?.message || 'Não foi possível carregar a conversa.' }, '*');
+        sendBridgeMessage({ ...response, error: error?.message || 'Não foi possível carregar a conversa.' });
       }
       return;
     }
@@ -130,6 +157,7 @@
     if (event.data.action === 'history') {
       const response = { source: 'wat-wa-bridge', action: 'history-result', requestId: event.data.requestId };
       try {
+        reportProgress(event.data, 'Ponte recebeu a busca. Identificando a conversa aberta…');
         if (!ready) throw new Error('WhatsApp ainda está carregando. Aguarde e tente novamente.');
         const chat = WPP.chat.getActiveChat();
         if (!chat) throw new Error('Abra uma conversa no WhatsApp para buscar seus áudios.');
@@ -140,17 +168,20 @@
         }
         const options = { count: 100, direction: 'before' };
         if (event.data.before) options.id = event.data.before;
+        reportProgress(event.data, 'Consultando o histórico no WhatsApp…');
         const messages = await withTimeout(() => WPP.chat.getMessages(chatId, options), 20000,
           'O WhatsApp não respondeu à busca de áudios. Recarregue a página e tente novamente.');
+        if (!Array.isArray(messages)) throw new Error('O WhatsApp devolveu um histórico inválido. Atualize os dois scripts.');
+        reportProgress(event.data, `${messages.length} mensagem(ns) recebida(s). Procurando áudios…`);
         messages.sort((a, b) => Number(a.t ?? a.timestamp ?? 0) - Number(b.t ?? b.timestamp ?? 0));
         const before = messages.length ? messageId(messages[0]) : null;
         const names = new Map();
         const audios = (await Promise.all(messages.map(message => audioDetails(message, names)))).filter(Boolean);
-        window.postMessage({ ...response, chatId, chatName: chat.name || chat.formattedTitle || chatId,
+        sendBridgeMessage({ ...response, chatId, chatName: String(chat.name || chat.formattedTitle || chatId),
           audios, before, hasMore: !!before && before !== event.data.before,
-          scanned: messages.length }, '*');
+          scanned: messages.length });
       } catch (error) {
-        window.postMessage({ ...response, error: error?.message || 'Não foi possível buscar os áudios.' }, '*');
+        sendBridgeMessage({ ...response, error: error?.message || 'Não foi possível buscar os áudios.' });
       }
       return;
     }
@@ -159,20 +190,36 @@
 
     try {
       const blob = await WPP.chat.downloadMedia(event.data.fullId);
+      const response = { source: 'wat-wa-bridge', action: 'download-result', requestId: event.data.requestId };
+      // O canal DOM usa texto tambem para audios: nao compartilha objetos Blob
+      // entre os contextos da pagina e do userscript com grants.
+      const reader = new FileReader();
+      reader.onload = () => sendDomMessage({ ...response, audioDataUrl: reader.result });
+      reader.onerror = () => sendDomMessage({ ...response, error: 'Não foi possível ler o áudio baixado.' });
+      reader.readAsDataURL(blob);
       window.postMessage({
-        source: 'wat-wa-bridge',
-        action: 'download-result',
-        requestId: event.data.requestId,
+        ...response,
         blob
       }, '*');
     } catch (error) {
-      window.postMessage({
+      sendBridgeMessage({
         source: 'wat-wa-bridge',
         action: 'download-result',
         requestId: event.data.requestId,
         error: error?.message || 'Não foi possível baixar o áudio'
-      }, '*');
+      });
     }
+  }
+
+  document.addEventListener('wat-ui-request', event => {
+    if (typeof event.detail !== 'string') return;
+    let data;
+    try { data = JSON.parse(event.detail); } catch { return; }
+    return handleBridgeRequest({ data });
+  });
+  window.addEventListener('message', event => {
+    if (event.source !== window) return;
+    return handleBridgeRequest(event);
   });
 
   WPP.loader.onReady(() => {
@@ -189,7 +236,7 @@
       const details = await audioDetails(message);
       if (!details) return;
       console.log('[TRANSCRIBER:WA]', '?udio detectado', details.fullId);
-      window.postMessage({ source: 'wat-wa-bridge', action: 'new-audio', ...details }, '*');
+      sendBridgeMessage({ source: 'wat-wa-bridge', action: 'new-audio', ...details });
     });
   });
 })();

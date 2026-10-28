@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.5.2
+// @version      0.5.3
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
 // @grant        GM_xmlhttpRequest
+// @sandbox      DOM
 // ==/UserScript==
 
 (function () {
@@ -34,6 +35,12 @@
   const log = (scope, ...args) => {
     if (DEBUG) console.log(`[TRANSCRIBER${scope ? `:${scope}` : ""}]`, ...args);
   };
+
+  function sendBridgeRequest(data) {
+    document.dispatchEvent(new CustomEvent("wat-ui-request", { detail: JSON.stringify(data) }));
+    // Mantem compatibilidade com pontes anteriores; a ponte nova deduplica pelo ID.
+    window.postMessage(data, "*");
+  }
 
   // ============================================================
   // CAMADAS DINÂMICAS — TRANSCRIBER x FAUSTO TOOLKIT
@@ -752,15 +759,22 @@
       () =>
         finishHistory({
           requestId,
-          error: "A busca demorou demais. Verifique se os dois scripts estão atualizados e se o WhatsApp terminou de carregar.",
+          error: historyRequest?.progress
+            ? `A busca demorou demais. Última etapa: ${historyRequest.progress}`
+            : "A ponte do WhatsApp não confirmou a busca. Atualize os dois scripts no Tampermonkey e recarregue a página.",
         }),
       30000,
     );
-    historyRequest = { requestId, timeout };
+    const connectionTimeout = setTimeout(() => {
+      if (historyRequest?.requestId === requestId && !historyRequest.progress) {
+        finishHistory({ requestId, error: "A ponte não respondeu. Habilite o script WhatsApp Audio Transcriber - WA Bridge no Tampermonkey e recarregue a página." });
+      }
+    }, 5000);
+    historyRequest = { requestId, timeout, connectionTimeout };
     document.querySelector("#wat-history-search").disabled = true;
     document.querySelector("#wat-history-more").disabled = true;
     document.querySelector("#wat-history-status").textContent = "Buscando áudios recebidos…";
-    window.postMessage(
+    sendBridgeRequest(
       {
         source: "wat-ui",
         action: "history",
@@ -768,13 +782,13 @@
         chatId: older ? historyPage.chatId : undefined,
         before: older ? historyPage.before : undefined,
       },
-      "*",
     );
   }
 
   function finishHistory(result) {
     if (result.requestId !== historyRequest?.requestId) return;
     clearTimeout(historyRequest.timeout);
+    clearTimeout(historyRequest.connectionTimeout);
     historyRequest = null;
     document.querySelector("#wat-history-search").disabled = false;
     document.querySelector("#wat-history-more").disabled = false;
@@ -783,6 +797,11 @@
       status.textContent = result.error;
       return;
     }
+    if (!Array.isArray(result.audios)) {
+      status.textContent = "A ponte devolveu uma resposta inválida. Atualize os dois scripts no Tampermonkey.";
+      return;
+    }
+    status.textContent = "Organizando os áudios encontrados…";
     historyPage = result;
     for (const message of result.audios) {
       if (historyAudios.has(message.fullId)) continue;
@@ -820,12 +839,22 @@
     return new Promise((resolve, reject) => {
       const requestId = crypto.randomUUID();
       const timeout = setTimeout(() => {
+        const progress = conversationRequest?.progress;
+        clearTimeout(conversationRequest?.connectionTimeout);
         conversationRequest = null;
-        reject(new Error("A busca demorou demais. Você pode exportar o que já foi carregado ou tentar continuar."));
+        reject(new Error(progress
+          ? `A busca demorou demais. Última etapa: ${progress}`
+          : "A ponte do WhatsApp não confirmou a busca. Atualize os dois scripts no Tampermonkey e recarregue a página."));
       }, 60000);
-      conversationRequest = { requestId, timeout, resolve, reject };
-      window.postMessage({ source: "wat-ui", action: "conversation-history", requestId,
-        chatId: conversationPage?.chatId, before: conversationPage?.before }, "*");
+      const connectionTimeout = setTimeout(() => {
+        if (conversationRequest?.requestId !== requestId || conversationRequest.progress) return;
+        clearTimeout(timeout);
+        conversationRequest = null;
+        reject(new Error("A ponte não respondeu. Habilite o script WhatsApp Audio Transcriber - WA Bridge no Tampermonkey e recarregue a página."));
+      }, 5000);
+      conversationRequest = { requestId, timeout, connectionTimeout, resolve, reject };
+      sendBridgeRequest({ source: "wat-ui", action: "conversation-history", requestId,
+        chatId: conversationPage?.chatId, before: conversationPage?.before });
     });
   }
 
@@ -833,8 +862,10 @@
     if (result.requestId !== conversationRequest?.requestId) return;
     const pending = conversationRequest;
     clearTimeout(pending.timeout);
+    clearTimeout(pending.connectionTimeout);
     conversationRequest = null;
     if (result.error) pending.reject(new Error(result.error));
+    else if (!Array.isArray(result.messages)) pending.reject(new Error("A ponte devolveu uma resposta inválida. Atualize os dois scripts."));
     else pending.resolve(result);
   }
 
@@ -1111,12 +1142,28 @@
         reject(new Error("Tempo limite ao baixar o áudio do WhatsApp"));
       }, 30000);
       pendingDownloads.set(requestId, { resolve, reject, timeout });
-      window.postMessage({ source: "wat-ui", action: "download", requestId, fullId }, "*");
+      sendBridgeRequest({ source: "wat-ui", action: "download", requestId, fullId });
     });
   }
 
-  window.addEventListener("message", (event) => {
-    if (event.source !== window || event.data?.source !== "wat-wa-bridge") return;
+  function handleBridgeMessage(event) {
+    if (event.data?.source !== "wat-wa-bridge") return;
+
+    if (event.data.action === "request-progress") {
+      const { requestId, message } = event.data;
+      if (typeof message !== "string") return;
+      if (requestId === historyRequest?.requestId) {
+        clearTimeout(historyRequest.connectionTimeout);
+        historyRequest.progress = message;
+        document.querySelector("#wat-history-status").textContent = message;
+      }
+      if (requestId === conversationRequest?.requestId) {
+        clearTimeout(conversationRequest.connectionTimeout);
+        conversationRequest.progress = message;
+        document.querySelector("#wat-export-status").textContent = `${message}\n${conversationMessages.size} mensagem(ns) já carregada(s).`;
+      }
+      return;
+    }
 
     if (event.data.action === "bridge-status" || event.data.action === "ready") {
       clearTimeout(bridgeStatusTimeout);
@@ -1153,9 +1200,28 @@
       clearTimeout(pending.timeout);
       pendingDownloads.delete(event.data.requestId);
       if (event.data.error) pending.reject(new Error(event.data.error));
+      else if (typeof event.data.audioDataUrl === "string") {
+        try {
+          const match = /^data:([^,]*);base64,([A-Za-z0-9+/=]*)$/.exec(event.data.audioDataUrl);
+          if (!match) throw new Error("O áudio recebido da ponte está inválido.");
+          const bytes = Uint8Array.from(atob(match[2]), char => char.charCodeAt(0));
+          pending.resolve(new Blob([bytes], { type: match[1] || "audio/ogg" }));
+        } catch (error) { pending.reject(error); }
+      }
       else pending.resolve(event.data.blob);
     }
+  }
+
+  document.addEventListener("wat-wa-response", event => {
+    if (typeof event.detail !== "string") return;
+    let data;
+    try { data = JSON.parse(event.detail); } catch { return; }
+    handleBridgeMessage({ data });
+  });
+  window.addEventListener("message", event => {
+    if (event.source !== window) return;
+    handleBridgeMessage(event);
   });
 
-  window.postMessage({ source: "wat-ui", action: "status" }, "*");
+  sendBridgeRequest({ source: "wat-ui", action: "status", requestId: crypto.randomUUID() });
 })();
