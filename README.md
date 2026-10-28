@@ -1,264 +1,143 @@
-# WhatsApp Audio Transcriber
+﻿# Transcritor de áudios do WhatsApp
 
-Aplicação local para detectar novas mensagens de voz recebidas no WhatsApp Web, baixar o áudio com WA-JS e enviá-lo a um backend Node.js. A transcrição real roda localmente com faster-whisper, sem API paga e sem enviar o áudio a terceiros.
+Transforma mensagens de voz do **WhatsApp Web** em texto no seu próprio computador. Não exige chave de API nem assinatura de um serviço de transcrição.
 
-## Requisitos
+Este guia foi escrito para quem nunca programou. Você não precisa abrir um terminal, instalar Git ou digitar comandos para a instalação recomendada.
 
-- Windows com Node.js 20 ou mais recente
-- Python 3.9 ou mais recente
-- Chrome ou Edge
-- Tampermonkey
-- Uma sessão ativa no [WhatsApp Web](https://web.whatsapp.com/)
+## O que você precisa
 
-## Instalação passo a passo (Windows)
+- Um computador **Intel ou AMD com Windows 10 ou 11 de 64 bits (x64)**. Esta instalação não atende Windows de 32 bits nem Windows ARM.
+- Google Chrome ou Microsoft Edge e uma conta do WhatsApp.
+- Internet para instalar e baixar o modelo de transcrição na primeira utilização.
+- Espaço livre para o programa, suas dependências e o modelo; reserve alguns GB. O desempenho depende do computador.
 
-### 1. Preparar o computador
+O instalador baixa **Node.js 22** e, se não encontrar um Python 3.13 x64 instalado, **Python 3.13.17 de 64 bits**, sem exigir que você escolha as versões. O Python novo fica numa pasta própria do usuário e o Node fica dentro do projeto. Uma instalação existente de Python 3.13 x64 pode ser reutilizada; não é preciso desinstalar outras versões.
 
-Instale Node.js 20 ou mais recente (com npm), Python 3.9 ou mais recente e Chrome ou Edge. No instalador do Python, habilite **Add Python to PATH**. Instale a extensão Tampermonkey no navegador. Git é necessário somente para baixar e atualizar pelo terminal.
+## 1. Baixar e guardar o programa
 
-Abra um novo PowerShell após instalar e confira:
+1. Abra [a página do projeto no GitHub](https://github.com/fschwaderer/transcriber).
+2. Clique no botão verde **Code** e depois em **Download ZIP**. Também pode [baixar o ZIP diretamente](https://github.com/fschwaderer/transcriber/archive/refs/heads/main.zip).
+3. Abra a pasta **Downloads**, clique com o botão direito no ZIP e escolha **Extrair tudo**.
+4. Guarde a pasta extraída em um lugar fixo, por exemplo `Documentos\Transcriber`. Abra essa pasta; nela devem aparecer `instalar.bat`, `README.md` e as pastas `browser`, `scripts` e `server`.
 
-```powershell
-node --version
-npm.cmd --version
-python --version
-git --version
-```
+**Não execute de dentro do ZIP.** Não apague nem mova essa pasta depois de instalar: o início automático depende dela. Evite pastas sincronizadas com OneDrive para não sincronizar modelos e dependências grandes.
 
-Se o Windows disponibilizar somente o comando `py`, use `py -3` no lugar de `python` ao criar o ambiente virtual.
+## 2. Instalar com dois cliques
 
-### 2. Baixar o projeto
+1. Dê dois cliques em **instalar.bat**. Se o Explorador esconder as extensões, ele pode aparecer apenas como **instalar**, com tipo “Arquivo em Lotes do Windows”.
+2. Uma janela vai mostrar o andamento. Aguarde até aparecer **Instalacao concluida!**. Os downloads podem levar vários minutos. Não feche a janela durante a instalação.
+3. Pressione uma tecla quando for solicitado para fechar a janela.
+4. Abra [a verificação do programa](http://127.0.0.1:3210/health). Se aparecer um texto contendo `"status":"ok"`, o servidor local está funcionando.
 
-No PowerShell, baixe o projeto e entre na pasta:
+O instalador baixa as ferramentas de sites oficiais, verifica o download do Node e a assinatura do instalador do Python, instala as bibliotecas de áudio, cria `server/.env` a partir do exemplo quando necessário e configura o início automático **quando o usuário atual entrar no Windows**. Ele inicia o servidor imediatamente, em segundo plano. Não é necessário deixar essa janela aberta.
 
-```powershell
-git clone https://github.com/fschwaderer/transcriber.git
-Set-Location .\transcriber
-```
+É normal aparecer `"worker":{"status":"stopped"...}` na verificação antes do primeiro áudio: o motor só carrega quando precisa transcrever. O servidor funcionar ainda não significa que a extensão do navegador esteja instalada; faça a próxima etapa.
 
-Se não tiver o Git instalado, use **Code > Download ZIP** na página do repositório, extraia o arquivo e abra o PowerShell na pasta extraída.
+Se a instalação falhar, leia a última mensagem de erro. Confira a internet e execute **instalar.bat** novamente. Suas configurações existentes são preservadas. Consulte também a seção de problemas abaixo.
 
-### 3. Instalar as dependências do Node.js
+## 3. Preparar o navegador (uma vez)
 
-Na pasta do projeto, instale as versões registradas no arquivo de dependências:
+Esta parte precisa ser feita por você: o programa não instala extensões nem concede permissões no navegador automaticamente.
 
-```powershell
-Set-Location .\server
-npm.cmd ci
-```
+1. No Chrome ou Edge, abra [o site oficial do Tampermonkey](https://www.tampermonkey.net/) e escolha a extensão para seu navegador. Instale-a pela loja oficial. O Tampermonkey permite executar os dois scripts que adicionam o transcritor ao WhatsApp.
+2. No menu de extensões do navegador, abra **Gerenciar extensões**, encontre **Tampermonkey** e clique em **Detalhes**. Ative **Permitir scripts de usuário**, se essa opção aparecer. Se não aparecer, consulte [a orientação oficial sobre o modo de desenvolvedor](https://www.tampermonkey.net/faq.php#Q209).
+3. Com o Tampermonkey instalado, abra [Instalar ponte do WhatsApp](https://raw.githubusercontent.com/fschwaderer/transcriber/main/browser/whatsapp-transcriber-wa-bridge.user.js). Na tela do Tampermonkey, clique em **Instalar**.
+4. Abra [Instalar painel do transcritor](https://raw.githubusercontent.com/fschwaderer/transcriber/main/browser/whatsapp-transcriber.user.js) e clique em **Instalar** novamente.
+5. Se o navegador apenas mostrar o código: abra o menu do Tampermonkey, escolha **Criar novo script**, apague o conteúdo inicial e cole o conteúdo completo do arquivo correspondente da pasta `browser`. Salve com **Ctrl+S**. Repita para o outro arquivo.
+6. No painel do Tampermonkey, confira se **WhatsApp Audio Transcriber - WA Bridge** e **WhatsApp Audio Transcriber** estão habilitados. São necessários **os dois**.
+7. Abra [WhatsApp Web](https://web.whatsapp.com/). Se necessário, use o celular para ler o QR Code em **Aparelhos conectados**. Recarregue a página com **Ctrl+R** se já estava aberta.
+8. Se o Tampermonkey pedir autorização para acessar **127.0.0.1**, permita. Esse endereço representa o seu próprio computador.
 
-### 4. Instalar o motor de transcrição
+O painel **Transcritor** deve aparecer no WhatsApp e informar que o backend está conectado. “Backend” é apenas o programa local que faz a transcrição.
 
-Ainda na pasta `server`, crie o ambiente Python local e instale o motor:
+## 4. Fazer a primeira transcrição
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r .\python\requirements.txt
-```
+1. Abra uma conversa que tenha um áudio recebido.
+2. No painel **Transcritor**, clique em **Buscar áudios da conversa**.
+3. Marque um áudio e clique em **Transcrever selecionados**.
+4. Aguarde o texto aparecer. **Na primeira vez, o programa baixa o modelo de reconhecimento de voz**, o que pode demorar vários minutos. Nas seguintes, ele reutiliza esse download.
 
-O ambiente `.venv`, as dependências e o modelo não ficam no GitHub; os comandos acima os preparam na máquina nova.
+Novos áudios recebidos também entram na fila automaticamente enquanto o WhatsApp Web e os scripts estiverem ativos. Apenas o servidor inicia com o Windows: **você ainda precisa abrir o navegador e entrar no WhatsApp Web**. O programa não abre o navegador nem entra na conta sozinho.
 
-### 5. Conferir a configuração
+Para mensagens mais antigas, abra a conversa e use **Buscar mais antigos**. Cada busca consulta até 100 mensagens, incluindo texto, então um lote sem áudios não significa que o histórico terminou. O programa não recupera mídias apagadas ou indisponíveis no WhatsApp.
 
-O arquivo `server/.env` já acompanha o projeto com configuração local sem chaves de API. Caso esteja ausente, crie-o a partir do exemplo (ainda na pasta `server`):
+Você pode arrastar o cabeçalho do painel para mudar sua posição. Use **↺** para restaurar a posição. A busca pode ser recolhida e ter sua altura ajustada com **−** e **+**. O botão **Logs** mostra informações úteis quando algo falha.
 
-```powershell
-Copy-Item .env.example .env
-```
+## Usar no dia a dia
 
-As principais opções são:
-
-```dotenv
-TRANSCRIPTION_PROVIDER=faster-whisper
-TRANSCRIPTION_LANGUAGE=pt
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
-WHISPER_CPU_THREADS=0
-HF_HOME=./models/.cache
-HF_HUB_DISABLE_XET=1
-```
-
-### 6. Iniciar e verificar o servidor
-
-Ainda na pasta `server`, inicie o servidor e mantenha o terminal aberto:
-
-```powershell
-npm.cmd start
-```
-
-Não é necessário ativar o ambiente Python antes de executar `npm start`: o backend chama diretamente `server/.venv/Scripts/python.exe`. Se quiser ativá-lo manualmente no PowerShell, o comando correto é `.\.venv\Scripts\Activate.ps1`.
-
-Na primeira transcrição, o modelo é baixado para `server/models/.cache`; nas próximas, o cache local é reutilizado. Para testar sem carregar o modelo, defina `TRANSCRIPTION_PROVIDER=mock`.
-
-O servidor escuta em `127.0.0.1:3210` por padrão. Para reiniciar automaticamente durante o desenvolvimento, use `npm.cmd run dev`.
-
-Teste a saúde no navegador em <http://127.0.0.1:3210/health>. A resposta deve conter `status: "ok"`; antes da primeira transcrição, o exemplo é:
-
-```json
-{"status":"ok","uptimeSeconds":5,"provider":"faster-whisper","worker":{"status":"stopped","model":"small","device":"cpu","startedAt":null,"readyAt":null,"lastError":null},"pendingRequests":0}
-```
-
-`worker.status: "stopped"` é normal antes do primeiro áudio: o modelo só é carregado quando uma transcrição é solicitada. `uptimeSeconds` varia conforme o tempo de execução.
-
-### 7. Instalar os dois scripts no navegador
-
-Siga a seção [Instalação do userscript](#instalação-do-userscript) abaixo. Ambos são necessários. Depois de salvar e habilitar os dois, recarregue o WhatsApp Web.
-
-### 8. Fazer a primeira transcrição
-
-Com o backend ativo, abra uma conversa e clique em **Buscar áudios da conversa**, selecione um áudio recebido e clique em **Transcrever selecionados**. Outra opção é receber uma nova mensagem de voz. Aguarde o download e o carregamento do modelo na primeira execução; acompanhe o painel e o botão **Logs**. O texto deve aparecer no painel.
-
-### 9. Configurar a inicialização automática (opcional)
-
-Para executar em segundo plano sem manter um terminal aberto, volte à pasta principal e execute `start-transcriber.bat`. Ele também prepara dependências ausentes. Encerre antes com **Ctrl+C** uma instância iniciada manualmente.
-
-Na pasta principal do projeto, execute `instalar-inicializacao-automatica.bat` uma vez. Ele cria um atalho na pasta **Inicializar** do usuário atual, sem exigir Visual Studio nem permissão de administrador, e inicia o servidor imediatamente.
-
-A cada login, `start-transcriber.bat` consulta o endpoint `/health`. Se o servidor já estiver funcionando, ele não abre outro processo; se estiver parado, instala as dependências que faltarem e o inicia em segundo plano. Os logs ficam em `%LOCALAPPDATA%\WhatsAppTranscriber`.
-
-Para desativar a inicialização automática, execute:
-
-```bat
-instalar-inicializacao-automatica.bat /remover
-```
-
-Para parar o backend iniciado pelo `start-transcriber.bat`, execute **stop-transcriber.bat**. Ele encerra também o worker de transcrição; transcrições em andamento serão interrompidas. Para voltar a usar, execute `start-transcriber.bat` novamente. A parada não remove a inicialização automática no próximo login.
-
-O comando de parada identifica o servidor pelo caminho completo usado pelo BAT atualizado. Uma execução iniciada pelo BAT antigo deve ser encerrada uma vez pelo Gerenciador de Tarefas (processo Node.js deste servidor); para execuções manuais em um terminal, use **Ctrl+C**. Depois, inicie pelo BAT atualizado.
-
-Se a pasta do projeto for movida, execute novamente o instalador para atualizar o caminho do atalho.
-
-Também é possível testar a rota no PowerShell com um arquivo de áudio real. Com `TRANSCRIPTION_PROVIDER=mock`, ela devolve um texto fixo e verifica apenas a integração HTTP; com `faster-whisper`, executa a transcrição real:
-
-```powershell
-curl.exe -X POST -F "audio=@C:\caminho\para\audio.ogg;type=audio/ogg" http://127.0.0.1:3210/transcribe
-```
-
-## Instalação do userscript
-
-1. Instale a extensão Tampermonkey no Chrome ou Edge.
-2. Crie um script com todo o conteúdo de `browser/whatsapp-transcriber-wa-bridge.user.js` e salve. Essa ponte roda WA-JS com `@grant none`.
-3. Crie outro script com todo o conteúdo de `browser/whatsapp-transcriber.user.js` e salve. Esse script controla a interface, a fila e o backend.
-4. Autorize o segundo script a acessar `127.0.0.1`; isso é usado exclusivamente para chamar o backend local.
-5. Confirme que os dois scripts estão habilitados e que o backend está em execução.
-6. Abra ou recarregue <https://web.whatsapp.com/>.
-
-Ao carregar o WhatsApp, o cabeçalho do painel mostra se o backend está conectado. Durante uma transcrição, ele também informa se o modelo Whisper está carregando ou pronto. Cada áudio passa pelas etapas **Na fila**, **Baixando áudio**, **Enviando ao backend** e **Transcrevendo no Whisper**, esta última com um contador de segundos.
-
-O botão **Logs** abre os últimos eventos do servidor dentro do próprio WhatsApp, incluindo recebimento do arquivo, carregamento do modelo, fila, conclusão e erros. O console do navegador continua mostrando logs com os prefixos `[TRANSCRIBER:*]`.
-
-Os dois userscripts se comunicam apenas dentro da aba usando `window.postMessage`. Essa separação é necessária porque WA-JS precisa do contexto da página (`@grant none`), enquanto o acesso HTTP local precisa de `GM_xmlhttpRequest`. O sistema processa somente mensagens novas do tipo `ptt` ou `audio`, ignora mensagens próprias, evita IDs duplicados e trabalha com um áudio por vez. Se o backend estiver desligado, o WhatsApp continua operando e o painel oferece **Tentar novamente**.
-
-### Mover o painel
-
-Arraste o cabeçalho **🎤 Transcritor** para mover o painel e acessar informações atrás dele. O botão **↺** no cabeçalho devolve o painel à posição original, no canto superior direito. Também é possível mover o painel minimizado; ao recarregar a página, ele volta à posição original.
-
-Para receber essa atualização, substitua o conteúdo do script **WhatsApp Audio Transcriber** no Tampermonkey pelo arquivo `browser/whatsapp-transcriber.user.js`, salve e recarregue o WhatsApp Web.
-
-### Transcrever áudios recebidos enquanto o programa estava parado
-
-A busca começa recolhida. O botão **Buscar áudios da conversa** permanece visível e abre os resultados ao iniciar a busca. Use **−** e **+** para ajustar a altura ou **Recolher / Expandir** para minimizar e restaurar somente a busca. A área mantém seu espaço mesmo com muitas transcrições, respeitando a altura da janela. As seleções são preservadas ao recolher; os ajustes de altura valem durante a sessão.
-
-Atualize **os dois userscripts** no Tampermonkey com os arquivos da pasta `browser` e recarregue o WhatsApp Web.
-
-1. Inicie o backend e abra a conversa desejada no WhatsApp Web.
-2. No painel, clique em **Buscar áudios da conversa**.
-3. Marque os áudios pela data, remetente e duração e clique em **Transcrever selecionados**.
-4. Para alcançar um período anterior, clique em **Buscar mais antigos**. Cada busca consulta até 100 mensagens, incluindo mensagens de texto; um lote sem áudios não significa que o histórico terminou.
-
-A busca inclui áudios recebidos já lidos e não depende de o Transcriber estar ativo no momento do recebimento. Ela usa o histórico disponível no WhatsApp Web; mídias apagadas ou indisponíveis para download não podem ser recuperadas pelo Transcriber. Buscar apenas lista as mensagens; o áudio é baixado e enviado ao backend ao entrar na fila.
-
-Áudios já na fila ou concluídos nesta sessão ficam desabilitados na seleção. Se uma tentativa falhar, é possível selecioná-la novamente ou usar **Tentar novamente** no painel. A fila e o controle de duplicados ficam em memória: recarregar a página inicia uma nova sessão. Ao mudar de conversa, clique novamente em **Buscar áudios da conversa**.
-
-## Arquitetura
-
-```text
-WhatsApp Web
-  → WA-JS: chat.new_message
-  → fila do userscript
-  → WPP.chat.downloadMedia(fullId)
-  → POST multipart/form-data /transcribe
-  → worker Python persistente (faster-whisper ou mock)
-  → painel no WhatsApp Web
-```
-
-Os arquivos são mantidos em memória pelo Multer, limitados a 25 MB e não são gravados em disco. O Node envia o áudio codificado ao worker Python pela entrada padrão; o modelo permanece carregado entre transcrições e devolve o texto pela saída padrão. Tanto `.venv` quanto os modelos locais são ignorados pelo Git.
-
-## Endpoints
-
-- `GET /health` — retorna o estado do servidor, do worker Whisper e a quantidade de requisições pendentes.
-- `GET /diagnostics` — retorna o estado atual e os últimos eventos de diagnóstico em memória.
-- `POST /transcribe` — exige um arquivo de áudio no campo `audio` e retorna a transcrição configurada.
-
-Não coloque segredos no userscript. O `.env` incluído contém somente configurações locais e nenhuma chave de API.
-
-## Organização do projeto
-
-| Caminho | Responsabilidade |
+| O que você quer fazer | O que abrir na pasta do programa |
 | --- | --- |
-| `browser/whatsapp-transcriber-wa-bridge.user.js` | Integração WA-JS, eventos, histórico e download da mídia no contexto da página. |
-| `browser/whatsapp-transcriber.user.js` | Painel, busca, fila, chamadas HTTP ao backend e diagnósticos. |
-| `server/src/index.js` | Servidor Express, CORS, saúde e tratamento de erros. |
-| `server/src/routes/transcribe.js` | Recebimento multipart do áudio e resposta com texto. |
-| `server/src/services/transcription.js` | Inicialização e comunicação com o worker Python persistente. |
-| `server/src/services/diagnostics.js` | Eventos de diagnóstico em memória. |
-| `server/python/faster_whisper_worker.py` | Carregamento do modelo e transcrição local. |
-| `start-transcriber.bat` / `stop-transcriber.bat` | Iniciar em segundo plano e encerrar o backend e seu worker. |
-| `instalar-inicializacao-automatica.bat` | Instalar ou remover o atalho de inicialização no Windows. |
+| Usar normalmente depois de entrar no Windows | Basta abrir o WhatsApp Web; o servidor inicia sozinho. |
+| Iniciar o servidor manualmente | `start-transcriber.bat` |
+| Parar o servidor agora | `stop-transcriber.bat` — interrompe transcrições em andamento. |
+| Desativar o início com o Windows | `remover-inicializacao-automatica.bat` |
+| Reativar o início com o Windows | `instalar-inicializacao-automatica.bat` |
+| Reparar a instalação ou atualizar dependências | Pare o servidor e execute `instalar.bat` novamente. |
 
-## Configuração do backend
+Desativar o início automático não encerra o servidor que já está ativo. Para isso, use também **stop-transcriber.bat**. Se você moveu a pasta, execute novamente **instalar.bat** no novo local para atualizar o atalho e recriar o ambiente Python caso necessário.
 
-Edite `server/.env` e reinicie o backend para aplicar mudanças.
+O início automático vale para o usuário que fez a instalação, ao entrar na conta do Windows. Não é um serviço ativo antes do login. O servidor inicia oculto e não reinstala dependências a cada login. Ao iniciar manualmente de novo, verifica se já está ativo para evitar duplicação.
 
-| Variável | Valor incluído | Uso |
-| --- | --- | --- |
-| `HOST` | `127.0.0.1` | Endereço de escuta local. |
-| `PORT` | `3210` | Porta HTTP. |
-| `TRANSCRIPTION_PROVIDER` | `faster-whisper` | Motor real; `mock` retorna um texto fixo para teste. Sem configuração, o código usa `mock`. |
-| `TRANSCRIPTION_LANGUAGE` | `pt` | Idioma enviado ao modelo. O prompt do worker foi escrito para português brasileiro. |
-| `WHISPER_MODEL` | `small` | Nome do modelo ou caminho de um modelo local compatível. |
-| `WHISPER_DEVICE` | `cpu` | Dispositivo usado pelo modelo. |
-| `WHISPER_COMPUTE_TYPE` | `int8` | Tipo de cálculo do modelo. |
-| `WHISPER_CPU_THREADS` | `0` | Quantidade de threads; `0` deixa a escolha ao motor. |
-| `WHISPER_PYTHON` | não definido | Caminho alternativo do executável Python; por padrão usa `.venv`. |
-| `HF_HOME` | `./models/.cache` | Cache local de modelos, relativo à pasta `server`. |
-| `HF_HUB_DISABLE_SYMLINKS_WARNING` | `1` | Suprime o aviso de symlinks do cache. |
-| `HF_HUB_DISABLE_XET` | `1` | Desabilita o mecanismo Xet no download do modelo. |
+## Se precisar instalar Python manualmente
 
-Se alterar host ou porta, ajuste também os endereços em `browser/whatsapp-transcriber.user.js` e o `@connect` quando necessário. Os BATs de início e verificação usam `127.0.0.1:3210`; atualize-os também se mudar esse endereço.
+**No caminho recomendado, você não precisa fazer isso.** Se houver um bloqueio no instalador automático:
 
-## Solução de problemas
+1. Use a [página oficial do Python 3.13.17](https://www.python.org/downloads/release/python-31317/) ou [este instalador direto para Windows x64](https://www.python.org/ftp/python/3.13.17/python-3.13.17-amd64.exe).
+2. Escolha **Windows installer (64-bit)**. Não escolha 32-bit, ARM64, embeddable, pacote de código-fonte ou versão experimental/free-threaded.
+3. No instalador, marque **Add python.exe to PATH**, mantenha **pip**, **venv** e o launcher **py** habilitados e clique em **Install Now**.
+4. Para instalação manual por terminal, use **explicitamente `py -3.13`**, conforme os comandos abaixo. Apenas `python` pode apontar para outra versão.
 
-| Sintoma | O que fazer |
+A série usada neste projeto é **Python 3.13 de 64 bits**. Não baixe simplesmente “o Python mais recente”: uma versão mais nova pode não ter todas as bibliotecas de áudio prontas para Windows. As bibliotecas são instaladas como pacotes binários; não é necessário instalar Visual Studio nem compilar FFmpeg.
+
+## Problemas comuns
+
+| O que aconteceu | Como resolver |
 | --- | --- |
-| `node`, `npm` ou `python` não reconhecido | Confira a instalação e o PATH; abra um novo terminal. Para Python, teste `py -3 --version`. |
-| PowerShell bloqueia `npm.ps1` | Use `npm.cmd ci` e `npm.cmd start`, como neste guia. |
-| Backend desconectado no painel | Abra `/health`, confira o processo Node e autorize o acesso a `127.0.0.1` no Tampermonkey. |
-| O painel ou a busca não funciona | Confira se os dois scripts estão habilitados e recarregue o WhatsApp Web. Consulte o console do navegador e o botão **Logs**. |
-| Python/worker não inicia | Confira `server/.venv/Scripts/python.exe` e execute novamente a instalação de `python/requirements.txt`. |
-| Primeira transcrição demora ou falha ao baixar o modelo | Confira a conexão com a internet e os logs. O prazo de cada requisição é de 10 minutos, incluindo o carregamento inicial. |
-| `EADDRINUSE` | A porta já está ocupada. Confira `/health`; encerre a instância anterior com Ctrl+C ou `stop-transcriber.bat`, conforme a forma de início. |
-| Áudio antigo não aparece | Abra a conversa correta e use **Buscar mais antigos**. A consulta depende do histórico disponível no WhatsApp Web. |
-| Áudio indisponível | A ferramenta depende do download oferecido pelo WhatsApp; não recupera mídia apagada ou inacessível. |
+| Dei dois cliques e não instalou | Extraia o ZIP primeiro. Confira se abriu `instalar.bat` da pasta que contém `server` e `scripts`. Leia a mensagem no final da janela. |
+| Download falhou | Confira a internet e tente novamente. Redes corporativas podem bloquear Python.org, nodejs.org, PyPI ou Hugging Face; nesse caso, peça ajuda ao responsável pela rede. |
+| Erro de DLL, `VCRUNTIME` ou motor Python não carrega | Instale o [Microsoft Visual C++ Redistributable x64 oficial](https://aka.ms/vs/17/release/vc_redist.x64.exe) e execute `instalar.bat` novamente. Esse componente pode pedir permissão de administrador. |
+| Backend desconectado | Execute `start-transcriber.bat` e abra [a verificação local](http://127.0.0.1:3210/health). Se falhar, execute `instalar.bat`. Autorize `127.0.0.1` no Tampermonkey. |
+| O painel não aparece | Confira se os dois scripts estão habilitados e se **Permitir scripts de usuário** está ativo nos detalhes da extensão. Recarregue o WhatsApp Web. |
+| O primeiro áudio demora muito | O modelo precisa ser baixado e carregado. Confira a internet e clique em **Logs** no painel. Cada pedido tem limite de 10 minutos; tente de novo se o download inicial exceder esse prazo. |
+| O programa não iniciou com o Windows | Execute `instalar-inicializacao-automatica.bat` novamente. Confira se o aplicativo não foi desabilitado em **Configurações → Aplicativos → Inicialização** e se a pasta não foi movida. |
+| Porta em uso / `EADDRINUSE` | Se a verificação local responder, o programa pode já estar ativo. Encerre a instância anterior com `stop-transcriber.bat`; se foi iniciada manualmente num terminal, use **Ctrl+C** nesse terminal. |
+| Um áudio antigo não aparece | Abra a conversa correta e use **Buscar mais antigos**. A mídia precisa continuar disponível no WhatsApp. |
 
-Para o backend iniciado em segundo plano, consulte `%LOCALAPPDATA%\WhatsAppTranscriber\server.log` e `server-error.log`. Para execução manual, consulte o terminal.
+Para encontrar os arquivos de registro, pressione **Windows+R**, cole `%LOCALAPPDATA%\WhatsAppTranscriber` e pressione Enter. Consulte `server.log`, `server-error.log` e, se houver falha ao iniciar, `startup-error.log`. Eles ajudam a descobrir o erro; não publique logs sem revisar os dados pessoais.
 
-## Atualizar o projeto
+## Atualizar ou remover
 
-Na pasta principal, encerre o backend e execute:
+**Atualizar:** execute `stop-transcriber.bat`, baixe o ZIP novo, extraia-o e copie os arquivos para a mesma pasta da instalação. Preserve `server/.env`. Execute `instalar.bat` novamente e atualize os dois scripts no Tampermonkey pelos links acima; confirme a instalação/atualização e recarregue o WhatsApp Web.
 
-```powershell
-git pull --ff-only
-Set-Location .\server
-npm.cmd ci
-.\.venv\Scripts\python.exe -m pip install -r .\python\requirements.txt
-```
-
-Atualize o conteúdo dos dois userscripts no Tampermonkey, reinicie o backend e recarregue o WhatsApp Web. Se instalou por ZIP, baixe a versão atual e refaça a instalação das dependências; preserve sua configuração local.
+**Remover:** execute `remover-inicializacao-automatica.bat`, depois `stop-transcriber.bat`, remova os dois scripts no Tampermonkey e apague a pasta do projeto. O Python dedicado pode ser removido em **Configurações → Aplicativos → Aplicativos instalados**: confira o local `%LOCALAPPDATA%\Programs\WhatsAppTranscriber\Python313` antes de remover para não desinstalar outro Python. Os registros ficam em `%LOCALAPPDATA%\WhatsAppTranscriber` e podem ser apagados separadamente.
 
 ## Privacidade e limitações
 
-A transcrição roda no computador. O áudio é obtido do WhatsApp e enviado ao backend local; o motor não utiliza uma API externa de transcrição. A instalação de dependências, o carregamento do WA-JS e o primeiro download do modelo exigem internet. A ponte carrega WA-JS de uma versão `nightly` externa e depende da compatibilidade dessa biblioteca com o WhatsApp Web.
+O áudio é obtido do WhatsApp e enviado ao servidor local em `127.0.0.1`. A transcrição é executada no computador com faster-whisper, sem API externa de transcrição. Instalar dependências, carregar WA-JS e baixar o modelo exigem internet. A integração usa uma biblioteca externa WA-JS e pode precisar de ajustes quando o WhatsApp Web mudar. Não é um produto oficial do WhatsApp.
 
-O backend recebe um arquivo por requisição, de até 25 MB, com MIME `audio/*`, e retorna `{"success":true,"text":"..."}` em caso de sucesso. A fila, os resultados do painel e os diagnósticos são temporários; não há banco de dados nem exportação automática. A precisão depende do áudio e do modelo, portanto revise o texto antes de utilizá-lo.
+Os resultados, a fila e os diagnósticos do painel ficam em memória e são perdidos ao recarregar a página. Os áudios são processados em memória, limitados a 25 MB por pedido. Não há banco de dados nem exportação automática. Revise o texto: a qualidade depende do áudio e do modelo.
+
+## Informações para quem desenvolve
+
+- `browser/whatsapp-transcriber-wa-bridge.user.js`: WA-JS, histórico e download do áudio.
+- `browser/whatsapp-transcriber.user.js`: painel, fila e comunicação com o servidor.
+- `server/src/index.js`: servidor HTTP Express.
+- `server/python/faster_whisper_worker.py`: motor Python persistente.
+- `scripts/install.ps1`: instalação, verificação e início automático.
+
+Instalação manual, a partir da pasta do projeto, em PowerShell com Node.js 22 e Python 3.13 x64 instalados:
+
+```powershell
+Copy-Item server/.env.example server/.env  # somente se .env ainda nao existir
+Set-Location server
+npm.cmd ci
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r python/requirements.txt
+npm.cmd start
+```
+
+A configuração padrão usa português (`TRANSCRIPTION_LANGUAGE=pt`), modelo `small`, CPU e `int8`. Edite `server/.env` e reinicie para aplicar mudanças. Os arquivos `.env`, ambientes, modelos e dependências não são publicados no GitHub. `WHISPER_PYTHON` permite definir outro executável; o padrão é `server/.venv/Scripts/python.exe`.
+
+`GET /health` mostra saúde e estado do motor, `GET /diagnostics` mostra eventos e `POST /transcribe` recebe um arquivo `audio/*` no campo `audio` de um formulário multipart. `TRANSCRIPTION_PROVIDER=mock` retorna texto fixo para testar a integração sem carregar modelo; o uso normal é `faster-whisper`.
+
+Mantenha `HOST=127.0.0.1` e `PORT=3210` para a instalação recomendada. Se mudar a porta, ajuste também os endereços no userscript. Os scripts de inicialização leem host e porta do `.env`. O modelo é baixado sob demanda para `server/models/.cache`.

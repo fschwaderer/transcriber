@@ -1,0 +1,33 @@
+name: Validar instalacao Windows
+on: [push, pull_request]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Validar sintaxe PowerShell
+        shell: powershell
+        run: |
+          Get-ChildItem scripts/*.ps1 | ForEach-Object {
+            $tokens = $null; $issues = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$issues)
+            if ($issues.Count) { throw ($issues | Out-String) }
+          }
+      - name: Instalar dependencias Node e testar HTTP
+        working-directory: server
+        run: |
+          npm ci
+          npm test
+      - name: Validar pacotes binarios e motor Python
+        run: |
+          python -m pip install --only-binary=:all: -r server/python/requirements.txt
+          python -c "from faster_whisper import WhisperModel; import av; assert av.__version__ == '18.1.0'"

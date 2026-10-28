@@ -701,12 +701,28 @@
       updateHistorySelection();
     }
     const requestId = crypto.randomUUID();
-    const timeout = setTimeout(() => finishHistory({ requestId, error: "A busca demorou demais. Verifique se os dois scripts estão atualizados e se o WhatsApp terminou de carregar." }), 30000);
+    const timeout = setTimeout(
+      () =>
+        finishHistory({
+          requestId,
+          error: "A busca demorou demais. Verifique se os dois scripts estão atualizados e se o WhatsApp terminou de carregar.",
+        }),
+      30000,
+    );
     historyRequest = { requestId, timeout };
     document.querySelector("#wat-history-search").disabled = true;
     document.querySelector("#wat-history-more").disabled = true;
     document.querySelector("#wat-history-status").textContent = "Buscando áudios recebidos…";
-    window.postMessage({ source: "wat-ui", action: "history", requestId, chatId: older ? historyPage.chatId : undefined, before: older ? historyPage.before : undefined }, "*");
+    window.postMessage(
+      {
+        source: "wat-ui",
+        action: "history",
+        requestId,
+        chatId: older ? historyPage.chatId : undefined,
+        before: older ? historyPage.before : undefined,
+      },
+      "*",
+    );
   }
 
   function finishHistory(result) {
@@ -734,7 +750,10 @@
       document.querySelector("#wat-history-list").append(label);
       historyAudios.set(message.fullId, { message, checkbox });
     }
-    status.textContent = `${result.chatName}: ${historyAudios.size} áudio(s) encontrado(s).\n` + (result.hasMore ? "Busca em lotes de 100 mensagens. Use Buscar mais antigos para continuar." : "Fim do histórico disponível.") + "\nÁudios já na fila ou concluídos nesta sessão ficam desabilitados.";
+    status.textContent =
+      `${result.chatName}: ${historyAudios.size} áudio(s) encontrado(s).\n` +
+      (result.hasMore ? "Busca em lotes de 100 mensagens. Use Buscar mais antigos para continuar." : "Fim do histórico disponível.") +
+      "\nÁudios já na fila ou concluídos nesta sessão ficam desabilitados.";
     document.querySelector("#wat-history-more").hidden = !result.hasMore;
     updateHistorySelection();
   }
@@ -810,7 +829,14 @@
       if (lastServerUptime && result.status.uptimeSeconds < lastServerUptime) lastEventId = 0;
       lastServerUptime = result.status.uptimeSeconds;
       const worker = result.status.worker;
-      const workerLabel = worker.status === "loading" ? " · modelo carregando" : worker.status === "ready" ? ` · ${worker.model} pronto` : worker.status === "error" ? " · worker com erro" : "";
+      const workerLabel =
+        worker.status === "loading"
+          ? " · modelo carregando"
+          : worker.status === "ready"
+            ? ` · ${worker.model} pronto`
+            : worker.status === "error"
+              ? " · worker com erro"
+              : "";
       indicator.textContent = `Backend conectado${workerLabel}`;
       indicator.className = "online";
       for (const event of result.events || []) {
