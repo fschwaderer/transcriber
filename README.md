@@ -1,4 +1,4 @@
-﻿# Transcritor de áudios do WhatsApp
+# Transcritor de áudios do WhatsApp
 
 Transforma mensagens de voz do **WhatsApp Web** em texto no seu próprio computador. Não exige chave de API nem assinatura de um serviço de transcrição.
 
@@ -65,14 +65,16 @@ Você pode arrastar o cabeçalho do painel para mudar sua posição. Use **↺**
 
 ## Exportar uma conversa com textos e áudios
 
+Mantenha os dois scripts do Tampermonkey atualizados: **WhatsApp Audio Transcriber 0.5.2** e **WA Bridge 0.4.1**. Após salvar os dois, recarregue o WhatsApp Web. O cabeçalho mostra separadamente o estado do backend e o da ponte do WhatsApp; para buscar mensagens, deve aparecer **WhatsApp: ponte pronta (0.4.1)**. Uma ponte ausente ou ainda carregando é indicada nesse mesmo local.
+
 Depois de atualizar o programa, **atualize os dois scripts no Tampermonkey** pelos links da etapa 3 e recarregue o WhatsApp Web. Esta função não exige reinstalar Python ou Node.js.
 
 1. Abra a conversa que deseja exportar, individual ou em grupo.
 2. No painel, abra **Exportar conversa (textos e áudios)**.
-3. Clique em **Carregar mensagens** para buscar as últimas 100 mensagens. **Carregar mais antigas** busca o próximo lote.
+3. Clique em **Carregar mensagens** para buscar as últimas 100 mensagens. **Carregar mais antigas** busca o próximo lote. Você também pode clicar diretamente em **Exportar TXT** ou **Exportar com negrito (HTML)**: se ainda não carregou mensagens, o primeiro lote é carregado automaticamente. Conversas sem áudios também podem ser exportadas.
 4. Para buscar o máximo retroativo, clique em **Carregar máximo retroativo**. A busca continua em lotes até o WhatsApp não fornecer novas mensagens. O painel mostra a quantidade carregada. Isso pode demorar em conversas grandes.
 5. Você pode clicar em **Parar busca**; o lote em andamento termina e o conteúdo já carregado fica disponível para exportar ou continuar depois. Se houver erro ou demora excessiva, as mensagens dos lotes anteriores também são preservadas.
-6. Clique em **Exportar TXT** para baixar o arquivo. Para nomes em negrito visual, use **Exportar com negrito (HTML)**; esse arquivo abre no navegador e pode ser impresso.
+6. Clique em **Exportar TXT** para baixar o arquivo. Para nomes em negrito visual, use **Exportar com negrito (HTML)**; esse arquivo abre no navegador e pode ser impresso. Os botões ficam disponíveis assim que o primeiro lote chega, mesmo enquanto a busca retroativa continua; o arquivo contém as mensagens carregadas até o clique.
 
 O arquivo inclui **mensagens enviadas e recebidas**, em ordem cronológica, com data, hora, remetente e texto. Suas próprias mensagens aparecem como **Você**; nos grupos, aparece o nome do participante, ou o identificador se o nome não estiver disponível. Os horários usam o fuso do computador que faz a exportação.
 

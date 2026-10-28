@@ -74,7 +74,7 @@ test('ponte identifica autores em grupos, mensagens proprias e legendas sem expo
   const sent = [];
   let handler;
   const window = { addEventListener(_name, callback) { handler = callback; }, postMessage(data) { sent.push(data); } };
-  const context = vm.createContext({ window, console, WPP: {
+  const context = vm.createContext({ window, console, setTimeout, clearTimeout, WPP: {
     version:'test', loader:{ onReady(callback) { callback(); } }, on() {},
     contact:{ async get(id) { return { name: id === 'ana@c.us' ? 'Ana' : 'Outro' }; } },
     chat:{ getActiveChat() { return {id:'grupo@g.us',name:'Grupo'}; }, async getMessages() { return [

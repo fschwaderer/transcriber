@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.5.0
+// @version      0.5.2
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
@@ -524,6 +524,7 @@
           </div>
         </div>
         <span id="wat-connection" title="Estado do backend local">Verificando…</span>
+        <span id="wat-wa-status" role="status" aria-live="polite">WhatsApp: verificando ponte…</span>
       </div>
       <div id="wat-manual">
         <div id="wat-history-heading">
@@ -546,10 +547,10 @@
           <button id="wat-export-max" type="button">Carregar máximo retroativo</button>
           <button id="wat-export-stop" type="button" disabled>Parar busca</button>
           <button id="wat-export-reset" type="button">Nova conversa</button>
-          <div id="wat-export-status" role="status" aria-live="polite">Abra uma conversa e carregue as mensagens.</div>
-          <button id="wat-export-txt" type="button" disabled>Exportar TXT</button>
-          <button id="wat-export-html" type="button" disabled>Exportar com negrito (HTML)</button>
-          <p id="wat-export-hint">TXT usa **Nome**. HTML exibe nomes em negrito. Inclui textos enviados e recebidos e transcrições já concluídas nesta aba. A busca depende do histórico disponível no WhatsApp.</p>
+          <div id="wat-export-status" role="status" aria-live="polite">Abra uma conversa. Você pode exportar mesmo sem áudios.</div>
+          <button id="wat-export-txt" type="button">Exportar TXT</button>
+          <button id="wat-export-html" type="button">Exportar com negrito (HTML)</button>
+          <p id="wat-export-hint">Exportar carrega as últimas 100 mensagens se nenhuma foi carregada. Para um histórico longo, use Carregar máximo retroativo; você pode exportar o trecho já carregado durante a busca. Não é necessário ter áudios. TXT usa **Nome**. HTML exibe nomes em negrito. Inclui textos enviados e recebidos e transcrições já concluídas nesta aba. A busca depende do histórico disponível no WhatsApp.</p>
         </details>
       </div>
       <div id="wat-list"></div>
@@ -560,7 +561,6 @@
     // Qualquer clique/toque no Transcriber traz o painel para frente.
     panel.addEventListener("pointerdown", bringTranscriberToFront, true);
 
-    setupPanelDragging(panel);
     panel.querySelector("#wat-export-load").addEventListener("click", () => void loadConversation(false));
     panel.querySelector("#wat-export-max").addEventListener("click", () => void loadConversation(true));
     panel.querySelector("#wat-export-stop").addEventListener("click", () => {
@@ -573,10 +573,10 @@
       conversationCursors.clear();
       conversationPage = null;
       updateConversationControls();
-      document.querySelector("#wat-export-status").textContent = "Abra uma conversa e carregue as mensagens.";
+      document.querySelector("#wat-export-status").textContent = "Abra uma conversa. Você pode exportar mesmo sem áudios.";
     });
-    panel.querySelector("#wat-export-txt").addEventListener("click", () => exportConversation(false));
-    panel.querySelector("#wat-export-html").addEventListener("click", () => exportConversation(true));
+    panel.querySelector("#wat-export-txt").addEventListener("click", () => void exportConversation(false));
+    panel.querySelector("#wat-export-html").addEventListener("click", () => void exportConversation(true));
     const historyBody = panel.querySelector("#wat-history-body");
     const historyToggle = panel.querySelector("#wat-history-toggle");
     const smaller = panel.querySelector("#wat-history-smaller");
@@ -633,6 +633,12 @@
       toggle.title = collapsed ? "Expandir painel" : "Minimizar painel";
       toggle.setAttribute("aria-expanded", String(!collapsed));
     });
+    // O arraste e um recurso opcional: uma falha nele nao pode impedir buscas.
+    try {
+      setupPanelDragging(panel);
+    } catch (error) {
+      log("UI", "Não foi possível configurar o arraste do painel.", error.message);
+    }
     return panel.querySelector("#wat-list");
   }
 
@@ -683,7 +689,7 @@
     handle.addEventListener("lostpointercapture", stopDragging);
     window.addEventListener("blur", () => stopDragging());
     window.addEventListener("resize", keepInView);
-    new ResizeObserver(keepInView).observe(panel);
+    if (typeof ResizeObserver === "function") new ResizeObserver(keepInView).observe(panel);
 
     panel.querySelector("#wat-reset-position").addEventListener("click", () => {
       stopDragging();
@@ -696,6 +702,10 @@
 
   const list = createPanel();
   log("", "Interface iniciada; aguardando a ponte WA-JS");
+  const bridgeStatusTimeout = setTimeout(() => {
+    document.querySelector("#wat-wa-status").textContent =
+      "WhatsApp: ponte sem resposta. Atualize e habilite o WA Bridge no Tampermonkey e recarregue a página.";
+  }, 5000);
 
   function updateHistorySelection() {
     let count = 0;
@@ -802,7 +812,7 @@
     document.querySelector("#wat-export-stop").disabled = !conversationLoading || conversationStop;
     document.querySelector("#wat-export-reset").disabled = conversationLoading;
     for (const id of ["#wat-export-txt", "#wat-export-html"]) {
-      document.querySelector(id).disabled = conversationLoading || conversationMessages.size === 0;
+      document.querySelector(id).disabled = conversationLoading && conversationMessages.size === 0;
     }
   }
 
@@ -847,6 +857,7 @@
         result.hasMore = result.hasMore && conversationMessages.size > previousSize && !conversationCursors.has(result.before);
         if (result.before) conversationCursors.add(result.before);
         conversationPage = result;
+        updateConversationControls();
         status.textContent = `${result.chatName}: ${conversationMessages.size} mensagem(ns) carregada(s).`;
         if (!maximum || !result.hasMore || conversationStop) break;
         await new Promise(resolve => setTimeout(resolve, 250));
@@ -897,8 +908,12 @@
     }).join("\n\n") + "\n";
   }
 
-  function exportConversation(rich) {
-    if (!conversationPage || !conversationMessages.size || conversationLoading) return;
+  async function exportConversation(rich) {
+    if (!conversationMessages.size) {
+      if (conversationLoading) return;
+      await loadConversation(false);
+    }
+    if (!conversationPage || !conversationMessages.size) return;
     const content = buildConversationExport(rich);
     const blob = new Blob(["\uFEFF", content.replace(/\r?\n/g, "\r\n")], { type: rich ? "text/html;charset=utf-8" : "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1102,6 +1117,14 @@
 
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.source !== "wat-wa-bridge") return;
+
+    if (event.data.action === "bridge-status" || event.data.action === "ready") {
+      clearTimeout(bridgeStatusTimeout);
+      const ready = event.data.action === "ready" || event.data.ready;
+      document.querySelector("#wat-wa-status").textContent = ready
+        ? `WhatsApp: ponte pronta${event.data.bridgeVersion ? ` (${event.data.bridgeVersion})` : " · atualize o WA Bridge"}`
+        : "WhatsApp: ponte ativa, aguardando o carregamento do WhatsApp…";
+    }
 
     if (event.data.action === "conversation-history-result") {
       acceptConversationPage(event.data);

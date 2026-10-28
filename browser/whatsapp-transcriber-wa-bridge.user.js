@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber - WA Bridge
 // @namespace    whatsapp-audio-transcriber
-// @version      0.4.0
+// @version      0.4.1
 // @description  Ponte WA-JS para o WhatsApp Audio Transcriber.
 // @match        https://web.whatsapp.com/*
 // @require      https://github.com/wppconnect-team/wa-js/releases/download/nightly/wppconnect-wa.js
@@ -15,25 +15,42 @@
 
   function messageId(message) {
     if (typeof message.id === 'string') return message.id;
-    return message.id?._serialized ?? message.id?.$1 ??
-      (message.id?.remote && message.id?.id
-        ? `${message.id.fromMe}_${message.id.remote}_${message.id.id}` : null);
+    for (const candidate of [message.id?._serialized, message.id?.$1, serializedId(message.id)]) {
+      if (typeof candidate === 'string' && /^(true|false)_/.test(candidate)) return candidate;
+    }
+    const remote = serializedId(message.id?.remote);
+    return remote && typeof message.id?.id === 'string'
+      ? `${message.id.fromMe === true}_${remote}_${message.id.id}` : null;
   }
 
-  async function audioDetails(message) {
+  function withTimeout(operation, milliseconds, description) {
+    let timeout;
+    return Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(description)), milliseconds);
+      }),
+    ]).finally(() => clearTimeout(timeout));
+  }
+
+  function resolveContactName(contactId, fallback, names) {
+    if (!names.has(contactId)) {
+      names.set(contactId, withTimeout(() => WPP.contact.get(contactId), 1500,
+        'Consulta de nome do contato demorou demais.').then(contact =>
+        [contact?.name, contact?.pushname, contact?.formattedName, contact?.shortName, contact?.notifyName, fallback]
+          .find(value => typeof value === 'string' && value.trim())
+      ).catch(() => fallback));
+    }
+    return names.get(contactId);
+  }
+
+  async function audioDetails(message, names = new Map()) {
     const fullId = messageId(message);
     if (!fullId || !['ptt', 'audio'].includes(message.type) ||
-        message.id?.fromMe === true || fullId.startsWith('true_')) return null;
-    const remote = message.id?.remote?._serialized ?? String(message.id?.remote ?? fullId.split('_')[1] ?? '');
-    const contactId = message.author?._serialized ?? String(message.author || remote);
-    let contactName = contactId.split('@')[0] || 'Contato desconhecido';
-    try {
-      const contact = await WPP.contact.get(contactId);
-      contactName = [contact?.name, contact?.pushname, contact?.formattedName,
-        contact?.shortName, contact?.notifyName].find(value => typeof value === 'string' && value.trim()) || contactName;
-    } catch (error) {
-      console.warn('[TRANSCRIBER:WA]', 'Nome do contato indisponível:', error?.message);
-    }
+        message.id?.fromMe === true || message.fromMe === true || fullId.startsWith('true_')) return null;
+    const remote = serializedId(message.id?.remote) || fullId.split('_')[1] || '';
+    const contactId = serializedId(message.author) || remote;
+    const contactName = await resolveContactName(contactId, contactId.split('@')[0] || 'Contato desconhecido', names);
     return { fullId, contactName, type: message.type, duration: message.duration,
       timestamp: Number(message.t ?? message.timestamp) || 0 };
   }
@@ -42,12 +59,16 @@
     window.postMessage({
       source: 'wat-wa-bridge',
       action: 'ready',
+      bridgeVersion: '0.4.1',
       version: WPP.version
     }, '*');
   }
 
   function serializedId(value) {
-    return value?._serialized ?? (typeof value === 'string' ? value : '');
+    if (typeof value === 'string') return value;
+    if (typeof value?._serialized === 'string') return value._serialized;
+    const text = value?.toString?.();
+    return typeof text === 'string' && text !== '[object Object]' ? text : '';
   }
 
   async function conversationDetails(message, chatId, names) {
@@ -59,16 +80,7 @@
     let contactName = 'Você';
     if (!fromMe) {
       const fallback = message.notifyName || senderId.split('@')[0] || 'Remetente desconhecido';
-      if (!names.has(senderId)) {
-        names.set(senderId, (async () => {
-          try {
-            const contact = await WPP.contact.get(senderId);
-            return [contact?.name, contact?.pushname, contact?.formattedName, contact?.shortName, fallback]
-              .find(value => typeof value === 'string' && value.trim());
-          } catch { return fallback; }
-        })());
-      }
-      contactName = await names.get(senderId);
+      contactName = await resolveContactName(senderId, fallback, names);
     }
     // body de midia pode conter dados internos; apenas chat usa o corpo textual.
     const text = message.type === 'chat' ? (message.body ?? message.text ?? '') : (message.caption ?? '');
@@ -80,6 +92,12 @@
   window.addEventListener('message', async (event) => {
     if (event.source !== window || event.data?.source !== 'wat-ui') return;
 
+    if (event.data.action === 'status') {
+      window.postMessage({ source: 'wat-wa-bridge', action: 'bridge-status', ready, bridgeVersion: '0.4.1' }, '*');
+      if (ready) announceReady();
+      return;
+    }
+
     if (event.data.action === 'conversation-history') {
       const response = { source: 'wat-wa-bridge', action: 'conversation-history-result', requestId: event.data.requestId };
       try {
@@ -87,12 +105,14 @@
         const chat = WPP.chat.getActiveChat();
         if (!chat) throw new Error('Abra a conversa que deseja exportar.');
         const chatId = serializedId(chat.id);
+        if (!chatId) throw new Error('Não foi possível identificar a conversa aberta. Recarregue o WhatsApp e atualize a ponte WA Bridge.');
         if (event.data.chatId && event.data.chatId !== chatId) {
           throw new Error('A conversa aberta mudou. Volte à conversa anterior ou clique em Nova conversa.');
         }
         const options = { count: 100, direction: 'before' };
         if (event.data.before) options.id = event.data.before;
-        const messages = await WPP.chat.getMessages(chatId, options);
+        const messages = await withTimeout(() => WPP.chat.getMessages(chatId, options), 20000,
+          'O WhatsApp não respondeu à busca de mensagens. Recarregue a página e tente novamente.');
         // A ordem retornada pelo WhatsApp determina o cursor, inclusive quando
         // varias mensagens compartilham o mesmo segundo.
         messages.sort((a, b) => Number(a.t ?? a.timestamp ?? 0) - Number(b.t ?? b.timestamp ?? 0));
@@ -113,28 +133,25 @@
         if (!ready) throw new Error('WhatsApp ainda está carregando. Aguarde e tente novamente.');
         const chat = WPP.chat.getActiveChat();
         if (!chat) throw new Error('Abra uma conversa no WhatsApp para buscar seus áudios.');
-        const chatId = chat.id?._serialized ?? String(chat.id);
+        const chatId = serializedId(chat.id);
+        if (!chatId) throw new Error('Não foi possível identificar a conversa aberta. Recarregue o WhatsApp e atualize a ponte WA Bridge.');
         if (event.data.chatId && event.data.chatId !== chatId) {
           throw new Error('A conversa aberta mudou. Clique em Buscar áudios da conversa para iniciar outra busca.');
         }
         const options = { count: 100, direction: 'before' };
         if (event.data.before) options.id = event.data.before;
-        const messages = await WPP.chat.getMessages(chatId, options);
+        const messages = await withTimeout(() => WPP.chat.getMessages(chatId, options), 20000,
+          'O WhatsApp não respondeu à busca de áudios. Recarregue a página e tente novamente.');
         messages.sort((a, b) => Number(a.t ?? a.timestamp ?? 0) - Number(b.t ?? b.timestamp ?? 0));
         const before = messages.length ? messageId(messages[0]) : null;
-        const audios = (await Promise.all(messages.map(audioDetails))).filter(Boolean);
+        const names = new Map();
+        const audios = (await Promise.all(messages.map(message => audioDetails(message, names)))).filter(Boolean);
         window.postMessage({ ...response, chatId, chatName: chat.name || chat.formattedTitle || chatId,
           audios, before, hasMore: !!before && before !== event.data.before,
           scanned: messages.length }, '*');
       } catch (error) {
         window.postMessage({ ...response, error: error?.message || 'Não foi possível buscar os áudios.' }, '*');
       }
-      return;
-    }
-
-    if (event.data.action === 'status' && ready) {
-      console.log('[TRANSCRIBER:WA]', 'Solicitação de status recebida da interface');
-      announceReady();
       return;
     }
 
