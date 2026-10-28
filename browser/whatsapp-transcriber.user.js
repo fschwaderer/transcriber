@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.4.8
+// @version      0.5.0
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
@@ -22,6 +22,12 @@
   const historyAudios = new Map();
   let historyPage = null;
   let historyRequest = null;
+  const conversationMessages = new Map();
+  let conversationPage = null;
+  let conversationLoading = false;
+  let conversationStop = false;
+  let conversationRequest = null;
+  const conversationCursors = new Set();
   let lastEventId = 0;
   let lastServerUptime = 0;
 
@@ -461,6 +467,10 @@
         overflow-x: hidden;
       }
 
+      #wat-export { margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; }
+      #wat-export summary { cursor: pointer; font-size: 11px; font-weight: bold; }
+      #wat-export-status, #wat-export-hint { font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 5px 0; }
+
       .wat-choice {
         display: flex;
         align-items: flex-start;
@@ -530,6 +540,17 @@
         <button id="wat-history-more" type="button" hidden>Buscar mais antigos</button>
         <button id="wat-history-submit" type="button" disabled>Transcrever selecionados (0)</button>
         </div>
+        <details id="wat-export">
+          <summary>Exportar conversa (textos e áudios)</summary>
+          <button id="wat-export-load" type="button">Carregar mensagens</button>
+          <button id="wat-export-max" type="button">Carregar máximo retroativo</button>
+          <button id="wat-export-stop" type="button" disabled>Parar busca</button>
+          <button id="wat-export-reset" type="button">Nova conversa</button>
+          <div id="wat-export-status" role="status" aria-live="polite">Abra uma conversa e carregue as mensagens.</div>
+          <button id="wat-export-txt" type="button" disabled>Exportar TXT</button>
+          <button id="wat-export-html" type="button" disabled>Exportar com negrito (HTML)</button>
+          <p id="wat-export-hint">TXT usa **Nome**. HTML exibe nomes em negrito. Inclui textos enviados e recebidos e transcrições já concluídas nesta aba. A busca depende do histórico disponível no WhatsApp.</p>
+        </details>
       </div>
       <div id="wat-list"></div>
       <div id="wat-diagnostics" aria-live="polite"></div>
@@ -540,6 +561,22 @@
     panel.addEventListener("pointerdown", bringTranscriberToFront, true);
 
     setupPanelDragging(panel);
+    panel.querySelector("#wat-export-load").addEventListener("click", () => void loadConversation(false));
+    panel.querySelector("#wat-export-max").addEventListener("click", () => void loadConversation(true));
+    panel.querySelector("#wat-export-stop").addEventListener("click", () => {
+      conversationStop = true;
+      document.querySelector("#wat-export-status").textContent = "Parando após o lote atual. As mensagens carregadas serão preservadas…";
+    });
+    panel.querySelector("#wat-export-reset").addEventListener("click", () => {
+      if (conversationLoading) return;
+      conversationMessages.clear();
+      conversationCursors.clear();
+      conversationPage = null;
+      updateConversationControls();
+      document.querySelector("#wat-export-status").textContent = "Abra uma conversa e carregue as mensagens.";
+    });
+    panel.querySelector("#wat-export-txt").addEventListener("click", () => exportConversation(false));
+    panel.querySelector("#wat-export-html").addEventListener("click", () => exportConversation(true));
     const historyBody = panel.querySelector("#wat-history-body");
     const historyToggle = panel.querySelector("#wat-history-toggle");
     const smaller = panel.querySelector("#wat-history-smaller");
@@ -758,6 +795,123 @@
     updateHistorySelection();
   }
 
+  function updateConversationControls() {
+    document.querySelector("#wat-export-load").disabled = conversationLoading || conversationPage?.hasMore === false;
+    document.querySelector("#wat-export-load").textContent = conversationPage ? "Carregar mais antigas" : "Carregar mensagens";
+    document.querySelector("#wat-export-max").disabled = conversationLoading || conversationPage?.hasMore === false;
+    document.querySelector("#wat-export-stop").disabled = !conversationLoading || conversationStop;
+    document.querySelector("#wat-export-reset").disabled = conversationLoading;
+    for (const id of ["#wat-export-txt", "#wat-export-html"]) {
+      document.querySelector(id).disabled = conversationLoading || conversationMessages.size === 0;
+    }
+  }
+
+  function requestConversationPage() {
+    return new Promise((resolve, reject) => {
+      const requestId = crypto.randomUUID();
+      const timeout = setTimeout(() => {
+        conversationRequest = null;
+        reject(new Error("A busca demorou demais. Você pode exportar o que já foi carregado ou tentar continuar."));
+      }, 60000);
+      conversationRequest = { requestId, timeout, resolve, reject };
+      window.postMessage({ source: "wat-ui", action: "conversation-history", requestId,
+        chatId: conversationPage?.chatId, before: conversationPage?.before }, "*");
+    });
+  }
+
+  function acceptConversationPage(result) {
+    if (result.requestId !== conversationRequest?.requestId) return;
+    const pending = conversationRequest;
+    clearTimeout(pending.timeout);
+    conversationRequest = null;
+    if (result.error) pending.reject(new Error(result.error));
+    else pending.resolve(result);
+  }
+
+  async function loadConversation(maximum) {
+    if (conversationLoading || conversationPage?.hasMore === false) return;
+    conversationLoading = true;
+    conversationStop = false;
+    updateConversationControls();
+    const status = document.querySelector("#wat-export-status");
+    try {
+      do {
+        status.textContent = `Carregando mensagens antigas… ${conversationMessages.size} mensagem(ns) disponível(is). Você pode parar a busca.`;
+        const result = await requestConversationPage();
+        if (conversationPage && result.chatId !== conversationPage.chatId) throw new Error("A conversa mudou. Inicie uma nova busca.");
+        const previousSize = conversationMessages.size;
+        for (const message of result.messages) {
+          if (!conversationMessages.has(message.fullId)) conversationMessages.set(message.fullId, message);
+        }
+        // Evita repeticoes infinitas se o WhatsApp devolver o mesmo lote/cursor.
+        result.hasMore = result.hasMore && conversationMessages.size > previousSize && !conversationCursors.has(result.before);
+        if (result.before) conversationCursors.add(result.before);
+        conversationPage = result;
+        status.textContent = `${result.chatName}: ${conversationMessages.size} mensagem(ns) carregada(s).`;
+        if (!maximum || !result.hasMore || conversationStop) break;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      } while (!conversationStop);
+      status.textContent += conversationStop ? "\nBusca interrompida. Você pode continuar ou exportar este trecho." :
+        conversationPage.hasMore ? "\nVocê pode carregar mais antigas ou exportar este trecho." :
+          "\nFim do histórico disponibilizado pelo WhatsApp. Isso pode ser apenas parte da conversa completa.";
+    } catch (error) {
+      status.textContent = `${error.message}\n${conversationMessages.size} mensagem(ns) preservada(s) para exportação.`;
+    } finally {
+      conversationLoading = false;
+      updateConversationControls();
+    }
+  }
+
+  function conversationText(message) {
+    if (["ptt", "audio"].includes(message.type)) {
+      const transcription = queueItems.get(message.fullId)?.transcription;
+      return `[Áudio · ${formatDuration(message.duration)}] ${transcription || "[Sem transcrição nesta sessão]"}`;
+    }
+    if (message.type === "chat") return message.text || "[Texto indisponível]";
+    const types = { image: "Imagem", video: "Vídeo", document: "Documento", sticker: "Figurinha",
+      revoked: "Mensagem apagada", ciphertext: "Mensagem indisponível", location: "Localização", vcard: "Contato" };
+    return `[${types[message.type] || "Mensagem sem texto"}]${message.text ? ` ${message.text}` : ""}`;
+  }
+
+  function conversationDate(timestamp) {
+    return timestamp ? new Date(timestamp * 1000).toLocaleString("pt-BR", { hour12: false }) : "Data/hora indisponível";
+  }
+
+  function escapeExportHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  }
+
+  function buildConversationExport(rich) {
+    const messages = [...conversationMessages.values()].sort((a, b) => a.timestamp - b.timestamp);
+    const title = `Conversa: ${conversationPage.chatName}`;
+    const note = `Exportado em ${new Date().toLocaleString("pt-BR")} · ${messages.length} mensagem(ns).\n` +
+      `Horários no fuso deste computador (${Intl.DateTimeFormat().resolvedOptions().timeZone}).\n` +
+      "Trecho carregado do WhatsApp Web; pode não incluir todo o histórico. Áudios incluem somente transcrições concluídas nesta aba.";
+    if (rich) {
+      const blocks = messages.map(message => `<article><div>[${escapeExportHtml(conversationDate(message.timestamp))}] <strong>${escapeExportHtml(message.contactName)}</strong></div><p>${escapeExportHtml(conversationText(message))}</p></article>`).join("\n");
+      return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>${escapeExportHtml(title)}</title><style>body{font:16px Arial,sans-serif;max-width:900px;margin:32px auto;padding:0 16px;color:#222}p{white-space:pre-wrap;overflow-wrap:anywhere}article{border-bottom:1px solid #ddd;padding:12px 0}</style><h1>${escapeExportHtml(title)}</h1><p>${escapeExportHtml(note)}</p>${blocks}</html>`;
+    }
+    return `${title}\n${note}\n\n` + messages.map(message => {
+      const name = String(message.contactName || "Remetente desconhecido").replace(/[\r\n]/g, " ");
+      return `[${conversationDate(message.timestamp)}] **${name}**\n${conversationText(message)}`;
+    }).join("\n\n") + "\n";
+  }
+
+  function exportConversation(rich) {
+    if (!conversationPage || !conversationMessages.size || conversationLoading) return;
+    const content = buildConversationExport(rich);
+    const blob = new Blob(["\uFEFF", content.replace(/\r?\n/g, "\r\n")], { type: rich ? "text/html;charset=utf-8" : "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const name = conversationPage.chatName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 100).replace(/[. ]+$/g, "") || "conversa";
+    anchor.href = url;
+    anchor.download = `WhatsApp-${name}-${new Date().toISOString().slice(0, 10)}.${rich ? "html" : "txt"}`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
   function formatDuration(seconds) {
     const value = Number(seconds) || 0;
     return `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
@@ -909,6 +1063,7 @@
     } finally {
       clearInterval(timer);
     }
+    item.transcription = text;
     setItemState(item, "📝 Transcrição", text);
     log("QUEUE", "Transcrição concluída", item.fullId);
   }
@@ -946,7 +1101,12 @@
   }
 
   window.addEventListener("message", (event) => {
-    if (event.data?.source !== "wat-wa-bridge") return;
+    if (event.source !== window || event.data?.source !== "wat-wa-bridge") return;
+
+    if (event.data.action === "conversation-history-result") {
+      acceptConversationPage(event.data);
+      return;
+    }
 
     if (event.data.action === "ready") {
       log("WA", `Bridge pronto (${event.data.version ?? "versão desconhecida"})`);

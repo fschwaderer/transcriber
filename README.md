@@ -63,6 +63,36 @@ Para mensagens mais antigas, abra a conversa e use **Buscar mais antigos**. Cada
 
 Você pode arrastar o cabeçalho do painel para mudar sua posição. Use **↺** para restaurar a posição. A busca pode ser recolhida e ter sua altura ajustada com **−** e **+**. O botão **Logs** mostra informações úteis quando algo falha.
 
+## Exportar uma conversa com textos e áudios
+
+Depois de atualizar o programa, **atualize os dois scripts no Tampermonkey** pelos links da etapa 3 e recarregue o WhatsApp Web. Esta função não exige reinstalar Python ou Node.js.
+
+1. Abra a conversa que deseja exportar, individual ou em grupo.
+2. No painel, abra **Exportar conversa (textos e áudios)**.
+3. Clique em **Carregar mensagens** para buscar as últimas 100 mensagens. **Carregar mais antigas** busca o próximo lote.
+4. Para buscar o máximo retroativo, clique em **Carregar máximo retroativo**. A busca continua em lotes até o WhatsApp não fornecer novas mensagens. O painel mostra a quantidade carregada. Isso pode demorar em conversas grandes.
+5. Você pode clicar em **Parar busca**; o lote em andamento termina e o conteúdo já carregado fica disponível para exportar ou continuar depois. Se houver erro ou demora excessiva, as mensagens dos lotes anteriores também são preservadas.
+6. Clique em **Exportar TXT** para baixar o arquivo. Para nomes em negrito visual, use **Exportar com negrito (HTML)**; esse arquivo abre no navegador e pode ser impresso.
+
+O arquivo inclui **mensagens enviadas e recebidas**, em ordem cronológica, com data, hora, remetente e texto. Suas próprias mensagens aparecem como **Você**; nos grupos, aparece o nome do participante, ou o identificador se o nome não estiver disponível. Os horários usam o fuso do computador que faz a exportação.
+
+Um arquivo TXT não tem formatação visual: os nomes são marcados com dois asteriscos, assim:
+
+```text
+[28/10/2026, 14:30:00] **Ana**
+Olá! Podemos conversar amanhã?
+
+[28/10/2026, 14:31:00] **Você**
+Sim, às nove.
+
+[28/10/2026, 14:32:00] **Ana**
+[Áudio · 0:12] Combinado, até amanhã!
+```
+
+Os áudios incluem **somente as transcrições já concluídas nesta aba**. Para incluí-las, transcreva os áudios desejados antes de exportar. Buscar o histórico não transcreve todos os áudios automaticamente. Áudios sem transcrição são identificados como tal; imagens, vídeos e outros tipos aparecem como indicações, com legenda quando disponível. Os arquivos de mídia não são anexados à exportação.
+
+Mantenha a conversa aberta durante a busca. Para exportar outra conversa, use **Nova conversa**, abra a outra e carregue as mensagens. Não é possível misturar conversas na mesma busca. O máximo retroativo depende do que o WhatsApp Web disponibiliza e pode ser apenas parte da conversa; não recupera mensagens apagadas nem garante todo o histórico do celular. Ao recarregar a aba, o histórico carregado e as transcrições desta sessão são perdidos; os arquivos já baixados permanecem no computador.
+
 ## Usar no dia a dia
 
 | O que você quer fazer | O que abrir na pasta do programa |
@@ -115,7 +145,7 @@ Para encontrar os arquivos de registro, pressione **Windows+R**, cole `%LOCALAPP
 
 O áudio é obtido do WhatsApp e enviado ao servidor local em `127.0.0.1`. A transcrição é executada no computador com faster-whisper, sem API externa de transcrição. Instalar dependências, carregar WA-JS e baixar o modelo exigem internet. A integração usa uma biblioteca externa WA-JS e pode precisar de ajustes quando o WhatsApp Web mudar. Não é um produto oficial do WhatsApp.
 
-Os resultados, a fila e os diagnósticos do painel ficam em memória e são perdidos ao recarregar a página. Os áudios são processados em memória, limitados a 25 MB por pedido. Não há banco de dados nem exportação automática. Revise o texto: a qualidade depende do áudio e do modelo.
+Os resultados, o histórico carregado, a fila e os diagnósticos do painel ficam em memória e são perdidos ao recarregar a página. Os áudios são processados em memória, limitados a 25 MB por pedido. Não há banco de dados. A exportação TXT/HTML ocorre somente ao clicar no botão correspondente e contém dados da conversa; cuide do arquivo baixado. Revise as transcrições: a qualidade depende do áudio e do modelo.
 
 ## Informações para quem desenvolve
 

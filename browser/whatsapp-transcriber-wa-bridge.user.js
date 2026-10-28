@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber - WA Bridge
 // @namespace    whatsapp-audio-transcriber
-// @version      0.3.0
+// @version      0.4.0
 // @description  Ponte WA-JS para o WhatsApp Audio Transcriber.
 // @match        https://web.whatsapp.com/*
 // @require      https://github.com/wppconnect-team/wa-js/releases/download/nightly/wppconnect-wa.js
@@ -46,8 +46,66 @@
     }, '*');
   }
 
+  function serializedId(value) {
+    return value?._serialized ?? (typeof value === 'string' ? value : '');
+  }
+
+  async function conversationDetails(message, chatId, names) {
+    const fullId = messageId(message);
+    if (!fullId) return null;
+    const fromMe = message.id?.fromMe === true || message.fromMe === true || fullId.startsWith('true_');
+    const senderId = serializedId(message.author) || serializedId(message.from) ||
+      (!chatId.endsWith('@g.us') ? chatId : '');
+    let contactName = 'Você';
+    if (!fromMe) {
+      const fallback = message.notifyName || senderId.split('@')[0] || 'Remetente desconhecido';
+      if (!names.has(senderId)) {
+        names.set(senderId, (async () => {
+          try {
+            const contact = await WPP.contact.get(senderId);
+            return [contact?.name, contact?.pushname, contact?.formattedName, contact?.shortName, fallback]
+              .find(value => typeof value === 'string' && value.trim());
+          } catch { return fallback; }
+        })());
+      }
+      contactName = await names.get(senderId);
+    }
+    // body de midia pode conter dados internos; apenas chat usa o corpo textual.
+    const text = message.type === 'chat' ? (message.body ?? message.text ?? '') : (message.caption ?? '');
+    return { fullId, contactName, fromMe, type: message.type || 'unknown',
+      text: typeof text === 'string' ? text : '', duration: Number(message.duration) || 0,
+      timestamp: Number(message.t ?? message.timestamp) || 0 };
+  }
+
   window.addEventListener('message', async (event) => {
-    if (event.data?.source !== 'wat-ui') return;
+    if (event.source !== window || event.data?.source !== 'wat-ui') return;
+
+    if (event.data.action === 'conversation-history') {
+      const response = { source: 'wat-wa-bridge', action: 'conversation-history-result', requestId: event.data.requestId };
+      try {
+        if (!ready) throw new Error('WhatsApp ainda está carregando. Aguarde e tente novamente.');
+        const chat = WPP.chat.getActiveChat();
+        if (!chat) throw new Error('Abra a conversa que deseja exportar.');
+        const chatId = serializedId(chat.id);
+        if (event.data.chatId && event.data.chatId !== chatId) {
+          throw new Error('A conversa aberta mudou. Volte à conversa anterior ou clique em Nova conversa.');
+        }
+        const options = { count: 100, direction: 'before' };
+        if (event.data.before) options.id = event.data.before;
+        const messages = await WPP.chat.getMessages(chatId, options);
+        // A ordem retornada pelo WhatsApp determina o cursor, inclusive quando
+        // varias mensagens compartilham o mesmo segundo.
+        messages.sort((a, b) => Number(a.t ?? a.timestamp ?? 0) - Number(b.t ?? b.timestamp ?? 0));
+        const before = messages.length ? messageId(messages[0]) : null;
+        const names = new Map();
+        const records = (await Promise.all(messages.map(message => conversationDetails(message, chatId, names)))).filter(Boolean);
+        window.postMessage({ ...response, chatId, chatName: chat.name || chat.formattedTitle || chatId,
+          messages: records, before, hasMore: !!before && before !== event.data.before }, '*');
+      } catch (error) {
+        window.postMessage({ ...response, error: error?.message || 'Não foi possível carregar a conversa.' }, '*');
+      }
+      return;
+    }
 
     if (event.data.action === 'history') {
       const response = { source: 'wat-wa-bridge', action: 'history-result', requestId: event.data.requestId };
