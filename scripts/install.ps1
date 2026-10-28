@@ -34,8 +34,15 @@ try {
     $python = Join-Path $pythonDir 'python.exe'
     if (-not (Test-Path -LiteralPath $python)) {
         if (Get-Command py.exe -ErrorAction SilentlyContinue) {
-            $detected = & py.exe -3.13 -c 'import sys, struct; print(sys.executable) if struct.calcsize(chr(80)) == 8 else None' 2>$null
-            if ($LASTEXITCODE -eq 0 -and $detected -and (Test-Path -LiteralPath $detected)) { $python = $detected }
+            # No Windows PowerShell 5.1, stderr nativo pode disparar o catch
+            # com ErrorActionPreference=Stop, mesmo com 2>$null. A ausencia
+            # do Python e esperada nesta consulta: deve levar ao download.
+            $detected = & {
+                $ErrorActionPreference = 'Continue'
+                $candidate = & py.exe -3.13 -c 'import sys, struct; print(sys.executable) if struct.calcsize(chr(80)) == 8 else None' 2>$null
+                if ($LASTEXITCODE -eq 0) { $candidate }
+            }
+            if ($detected -and (Test-Path -LiteralPath $detected)) { $python = $detected }
         }
         $standardPython = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'
         if (-not (Test-Path -LiteralPath $python) -and (Test-Path -LiteralPath $standardPython)) { $python = $standardPython }

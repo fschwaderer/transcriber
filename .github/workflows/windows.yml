@@ -22,6 +22,9 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$issues)
             if ($issues.Count) { throw ($issues | Out-String) }
           }
+      - name: Testar instalador sem Python 3.13
+        shell: powershell
+        run: ./scripts/tests/install.test.ps1
       - name: Instalar dependencias Node e testar HTTP
         working-directory: server
         run: |
