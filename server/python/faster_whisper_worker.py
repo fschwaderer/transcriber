@@ -33,16 +33,19 @@ for line in sys.stdin:
         request = json.loads(line)
         request_id = request["id"]
         audio = io.BytesIO(base64.b64decode(request["audio"], validate=True))
+        language = request.get("language") or "pt"
+        if language == "auto":
+            language = None
         segments, _info = model.transcribe(
             audio,
-            language=request.get("language") or "pt",
+            language=language,
             beam_size=5,
             vad_filter=False,
             condition_on_previous_text=False,
             initial_prompt=(
                 "Mensagem de voz informal em português brasileiro enviada pelo "
                 "WhatsApp. Transcreva literalmente, com ortografia natural."
-            ),
+            ) if language == "pt" else None,
         )
         text = " ".join(segment.text.strip() for segment in segments).strip()
         if not text:

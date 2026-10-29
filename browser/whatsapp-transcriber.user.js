@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WhatsApp Audio Transcriber
 // @namespace    whatsapp-audio-transcriber
-// @version      0.5.3
+// @version      0.6.2
 // @description  Envia áudios recebidos no WhatsApp Web para transcrição local.
 // @match        https://web.whatsapp.com/*
 // @connect      127.0.0.1
@@ -14,6 +14,8 @@
 
   const API_URL = "http://127.0.0.1:3210/transcribe";
   const DIAGNOSTICS_URL = "http://127.0.0.1:3210/diagnostics";
+  const SETTINGS_URL = "http://127.0.0.1:3210/settings";
+  const UI_VERSION = "0.6.2";
   const DEBUG = true;
   const processedMessages = new Set();
   const transcriptionQueue = [];
@@ -31,6 +33,14 @@
   const conversationCursors = new Set();
   let lastEventId = 0;
   let lastServerUptime = 0;
+  let settingsSaving = false;
+  let settingsDirty = false;
+  let settingsLoading = false;
+  let settingsAvailable = false;
+  let closeActiveModal = null;
+  let backendOnline = false;
+  let bridgeReady = false;
+  let workerFailed = false;
 
   const log = (scope, ...args) => {
     if (DEBUG) console.log(`[TRANSCRIBER${scope ? `:${scope}` : ""}]`, ...args);
@@ -128,6 +138,9 @@
       #wat-heading {
         flex: 1;
         min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
 
         color: #222;
         font-size: 14px;
@@ -181,6 +194,8 @@
       }
 
       #wat-clear,
+      #wat-settings-toggle,
+      #wat-export-toggle,
       #wat-toggle,
       #wat-logs-toggle,
       #wat-reset-position {
@@ -200,6 +215,8 @@
       }
 
       #wat-clear,
+      #wat-settings-toggle,
+      #wat-export-toggle,
       #wat-toggle,
       #wat-reset-position {
         width: 26px;
@@ -213,6 +230,8 @@
       }
 
       #wat-clear:hover,
+      #wat-settings-toggle:hover,
+      #wat-export-toggle:hover,
       #wat-toggle:hover,
       #wat-logs-toggle:hover,
       #wat-reset-position:hover {
@@ -229,6 +248,7 @@
       }
 
       #wat-panel.wat-collapsed #wat-list,
+      #wat-panel.wat-collapsed #wat-settings,
       #wat-panel.wat-collapsed #wat-diagnostics,
       #wat-panel.wat-collapsed #wat-connection,
       #wat-panel.wat-collapsed #wat-manual {
@@ -349,6 +369,35 @@
       #wat-diagnostics.open {
         display: block;
       }
+
+      #wat-system-status { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #dc3545; cursor: help; }
+      #wat-system-status[data-state="online"] { background: #198754; box-shadow: 0 0 0 3px rgba(25,135,84,.12); }
+      #wat-system-status:focus-visible { outline: 2px solid #495057; outline-offset: 4px; }
+      #wat-export-toggle { display: grid; place-items: center; }
+      #wat-settings[hidden] { display: none; }
+      .wat-modal-layer[hidden] { display: none !important; }
+      .wat-modal-layer { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .38); color: #222; font: 12px/1.5 Arial, sans-serif; }
+      .wat-modal-layer, .wat-modal-layer * { box-sizing: border-box; }
+      .wat-modal-card { width: min(560px, calc(100vw - 40px)); max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; border: 1px solid #bbb; border-radius: 12px; box-shadow: 0 12px 48px rgba(0,0,0,.3); }
+      .wat-modal-layer button:focus-visible, .wat-modal-layer select:focus-visible { outline: 2px solid #198754; outline-offset: 2px; }
+      #wat-settings { min-height: 0; padding: 18px; background: #fafafa; }
+      #wat-settings h2 { margin: 0; font-size: 16px; }
+      #wat-settings h3 { font-size: 12px; margin: 16px 0 8px; }
+      #wat-settings-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      #wat-settings button { border: 1px solid #bbb; border-radius: 6px; background: white; color: #333; padding: 7px 10px; cursor: pointer; font: inherit; }
+      #wat-settings button:disabled { opacity: .55; cursor: default; }
+      #wat-settings-form label { display: block; margin: 9px 0 4px; font-weight: bold; }
+      #wat-settings-form select { width: 100%; padding: 8px; border: 1px solid #bbb; border-radius: 6px; background: white; color: #222; font: inherit; }
+      #wat-settings-form p { font-size: 10px; color: #666; }
+      #wat-settings #wat-settings-save { width: 100%; margin-top: 7px; background: #198754; color: white; border-color: #198754; }
+      #wat-settings-message { white-space: pre-wrap; margin: 8px 0; font-size: 10px; }
+      #wat-settings-message[data-error="true"] { color: #b42318; }
+      #wat-settings dl { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 6px 8px; margin: 0; font-size: 12px; }
+      #wat-settings dt { color: #666; }
+      #wat-settings dd { margin: 0; white-space: normal; overflow-wrap: anywhere; }
+      #wat-settings-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+      #wat-settings-tools button { width: auto; height: auto; line-height: 1.3; }
+      #wat-settings #wat-diagnostics { margin-top: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 6px; }
 
       .wat-log {
         margin-bottom: 5px;
@@ -474,9 +523,19 @@
         overflow-x: hidden;
       }
 
-      #wat-export { margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; }
-      #wat-export summary { cursor: pointer; font-size: 11px; font-weight: bold; }
-      #wat-export-status, #wat-export-hint { font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 5px 0; }
+      #wat-export[hidden] { display: none; }
+      #wat-export { padding: 18px; background: #fff; }
+      #wat-export-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      #wat-export-top h2 { margin: 0; font-size: 16px; }
+      #wat-export h3 { margin: 16px 0 8px; font-size: 12px; }
+      #wat-export button { padding: 8px 12px; border: 1px solid #bbb; border-radius: 6px; background: white; color: #333; cursor: pointer; font: inherit; }
+      #wat-export button:disabled { opacity: .55; cursor: default; }
+      #wat-export button:hover:not(:disabled) { background: #f1f3f5; }
+      .wat-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      #wat-export #wat-export-txt { background: #198754; border-color: #198754; color: white; }
+      #wat-export-status { padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #f8f9fa; }
+      #wat-export-status, #wat-export-hint { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0; }
+      #wat-export-hint { color: #666; font-size: 11px; }
 
       .wat-choice {
         display: flex;
@@ -522,17 +581,54 @@
     panel.innerHTML = `
       <div id="wat-title" title="Arraste para mover o painel">
         <div id="wat-title-row">
-          <span id="wat-heading">🎤 Transcritor</span>
+          <span id="wat-heading">🎤 Transcritor<span id="wat-system-status" data-state="offline" role="img" tabindex="0" aria-label="Verificando sistema" title="Verificando sistema…"></span></span>
           <div id="wat-actions">
             <button id="wat-reset-position" type="button" title="Voltar à posição original" aria-label="Voltar à posição original">↺</button>
-            <button id="wat-logs-toggle" type="button" title="Ver diagnóstico">Logs</button>
-            <button id="wat-clear" type="button" title="Limpar transcrições" aria-label="Limpar transcrições">⌫</button>
+            <button id="wat-export-toggle" type="button" title="Exportar conversa" aria-label="Exportar conversa" aria-haspopup="dialog" aria-controls="wat-export" aria-expanded="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg></button>
+            <button id="wat-settings-toggle" type="button" title="Configurações" aria-label="Abrir configurações" aria-haspopup="dialog" aria-controls="wat-settings" aria-expanded="false">⚙</button>
             <button id="wat-toggle" type="button" title="Minimizar painel" aria-label="Minimizar painel" aria-expanded="true">−</button>
           </div>
         </div>
-        <span id="wat-connection" title="Estado do backend local">Verificando…</span>
-        <span id="wat-wa-status" role="status" aria-live="polite">WhatsApp: verificando ponte…</span>
       </div>
+      <section id="wat-settings" class="wat-modal-card" hidden role="dialog" aria-modal="true" aria-labelledby="wat-settings-heading">
+        <div id="wat-settings-top"><h2 id="wat-settings-heading">Configurações</h2><button id="wat-settings-close" type="button" aria-label="Fechar configurações">Fechar</button></div>
+        <form id="wat-settings-form">
+          <label for="wat-model">Modelo de transcrição</label>
+          <select id="wat-model" disabled><option>Carregando…</option></select>
+          <p>Modelos maiores usam mais memória. O primeiro áudio com um modelo novo pode exigir um download.</p>
+          <label for="wat-language">Idioma dos áudios</label>
+          <select id="wat-language" disabled><option>Carregando…</option></select>
+          <button id="wat-settings-save" type="submit" disabled>Salvar alterações</button>
+        </form>
+        <div id="wat-settings-message" role="status" aria-live="polite"></div>
+        <h3>Status do sistema</h3>
+        <dl>
+          <dt>Backend</dt><dd id="wat-connection">Verificando…</dd>
+          <dt>WhatsApp</dt><dd id="wat-wa-status">WhatsApp: verificando ponte…</dd>
+          <dt>Motor</dt><dd id="wat-worker-status">Aguardando backend</dd>
+          <dt>Modelo atual</dt><dd id="wat-current-model">—</dd>
+          <dt>Execução</dt><dd id="wat-device">—</dd>
+          <dt>Solicitações</dt><dd id="wat-pending">—</dd>
+          <dt>Ativo há</dt><dd id="wat-uptime">—</dd>
+        </dl>
+        <h3>Versões</h3>
+        <dl>
+          <dt>Painel</dt><dd>${UI_VERSION}</dd>
+          <dt>Ponte</dt><dd id="wat-bridge-version">Aguardando ponte</dd>
+          <dt>WA-JS</dt><dd id="wat-wajs-version">Aguardando WhatsApp</dd>
+          <dt>Backend</dt><dd id="wat-backend-version">—</dd>
+          <dt>Node.js</dt><dd id="wat-node-version">—</dd>
+          <dt>Python</dt><dd id="wat-python-version">—</dd>
+          <dt>faster-whisper</dt><dd id="wat-whisper-version">—</dd>
+        </dl>
+        <h3>Diagnóstico e painel</h3>
+        <div id="wat-settings-tools">
+          <button id="wat-settings-refresh" type="button">Atualizar status</button>
+          <button id="wat-logs-toggle" type="button" aria-expanded="false" aria-controls="wat-diagnostics">Ver logs</button>
+          <button id="wat-clear" type="button">Limpar transcrições</button>
+        </div>
+        <div id="wat-diagnostics" aria-live="polite"></div>
+      </section>
       <div id="wat-manual">
         <div id="wat-history-heading">
           <button id="wat-history-search" type="button">Buscar áudios da conversa</button>
@@ -548,25 +644,38 @@
         <button id="wat-history-more" type="button" hidden>Buscar mais antigos</button>
         <button id="wat-history-submit" type="button" disabled>Transcrever selecionados (0)</button>
         </div>
-        <details id="wat-export">
-          <summary>Exportar conversa (textos e áudios)</summary>
+        <section id="wat-export" class="wat-modal-card" hidden role="dialog" aria-modal="true" aria-labelledby="wat-export-heading">
+          <div id="wat-export-top"><h2 id="wat-export-heading">Exportar conversa</h2><button id="wat-export-close" type="button" aria-label="Fechar exportação">Fechar</button></div>
+          <p>Inclui mensagens enviadas e recebidas, com remetentes, datas e transcrições já concluídas.</p>
+          <h3>Carregar histórico</h3>
+          <div class="wat-export-actions">
           <button id="wat-export-load" type="button">Carregar mensagens</button>
           <button id="wat-export-max" type="button">Carregar máximo retroativo</button>
           <button id="wat-export-stop" type="button" disabled>Parar busca</button>
           <button id="wat-export-reset" type="button">Nova conversa</button>
+          </div>
           <div id="wat-export-status" role="status" aria-live="polite">Abra uma conversa. Você pode exportar mesmo sem áudios.</div>
+          <h3>Baixar arquivo</h3>
+          <div class="wat-export-actions">
           <button id="wat-export-txt" type="button">Exportar TXT</button>
           <button id="wat-export-html" type="button">Exportar com negrito (HTML)</button>
+          </div>
           <p id="wat-export-hint">Exportar carrega as últimas 100 mensagens se nenhuma foi carregada. Para um histórico longo, use Carregar máximo retroativo; você pode exportar o trecho já carregado durante a busca. Não é necessário ter áudios. TXT usa **Nome**. HTML exibe nomes em negrito. Inclui textos enviados e recebidos e transcrições já concluídas nesta aba. A busca depende do histórico disponível no WhatsApp.</p>
-        </details>
+        </section>
       </div>
       <div id="wat-list"></div>
-      <div id="wat-diagnostics" aria-live="polite"></div>
     `;
     document.body.appendChild(panel);
 
     // Qualquer clique/toque no Transcriber traz o painel para frente.
     panel.addEventListener("pointerdown", bringTranscriberToFront, true);
+    const statusIndicator = panel.querySelector("#wat-system-status");
+    const loadStatusDetails = () => { if (!settingsAvailable) void loadSettings(); };
+    statusIndicator.addEventListener("mouseenter", loadStatusDetails);
+    statusIndicator.addEventListener("focus", loadStatusDetails);
+    panel.querySelector("#wat-settings-form").addEventListener("change", () => { settingsDirty = true; });
+    panel.querySelector("#wat-settings-form").addEventListener("submit", event => { event.preventDefault(); void saveUserSettings(); });
+    panel.querySelector("#wat-settings-refresh").addEventListener("click", () => { void loadSettings(); void refreshDiagnostics(); sendBridgeRequest({ source: "wat-ui", action: "status", requestId: crypto.randomUUID() }); });
 
     panel.querySelector("#wat-export-load").addEventListener("click", () => void loadConversation(false));
     panel.querySelector("#wat-export-max").addEventListener("click", () => void loadConversation(true));
@@ -632,7 +741,9 @@
     });
     const toggle = panel.querySelector("#wat-toggle");
     panel.querySelector("#wat-logs-toggle").addEventListener("click", () => {
-      panel.querySelector("#wat-diagnostics").classList.toggle("open");
+      const open = document.querySelector("#wat-diagnostics").classList.toggle("open");
+      document.querySelector("#wat-logs-toggle").setAttribute("aria-expanded", String(open));
+      document.querySelector("#wat-logs-toggle").textContent = open ? "Ocultar logs" : "Ver logs";
     });
     toggle.addEventListener("click", () => {
       const collapsed = panel.classList.toggle("wat-collapsed");
@@ -646,7 +757,47 @@
     } catch (error) {
       log("UI", "Não foi possível configurar o arraste do painel.", error.message);
     }
+    setupCenteredDialog(panel, "wat-settings", "wat-settings-toggle", "wat-settings-close", () => void loadSettings());
+    setupCenteredDialog(panel, "wat-export", "wat-export-toggle", "wat-export-close");
     return panel.querySelector("#wat-list");
+  }
+
+  function setupCenteredDialog(panel, dialogId, openerId, closeId, onOpen = () => {}) {
+    const dialog = panel.querySelector(`#${dialogId}`);
+    const opener = panel.querySelector(`#${openerId}`);
+    const closeButton = dialog.querySelector(`#${closeId}`);
+    const layer = document.createElement("div");
+    layer.id = `${dialogId}-layer`;
+    layer.className = "wat-modal-layer";
+    layer.hidden = true;
+    layer.append(dialog);
+    document.body.append(layer);
+    const close = (restoreFocus = true) => {
+      layer.hidden = true; dialog.hidden = true;
+      opener.setAttribute("aria-expanded", "false");
+      if (closeActiveModal === close) closeActiveModal = null;
+      if (restoreFocus) opener.focus();
+    };
+    opener.addEventListener("click", () => {
+      if (!layer.hidden) { close(); return; }
+      if (closeActiveModal) closeActiveModal(false);
+      closeActiveModal = close;
+      layer.hidden = false; dialog.hidden = false;
+      opener.setAttribute("aria-expanded", "true");
+      onOpen(); closeButton.focus();
+    });
+    closeButton.addEventListener("click", () => close());
+    layer.addEventListener("pointerdown", bringTranscriberToFront, true);
+    layer.addEventListener("click", event => { if (event.target === layer) close(); });
+    layer.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
+      if (event.key !== "Tab") return;
+      const controls = [...dialog.querySelectorAll('button:not(:disabled), select:not(:disabled), input:not(:disabled), [tabindex="0"]')]
+        .filter(element => !element.closest("[hidden]"));
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
   }
 
   function setupPanelDragging(panel) {
@@ -677,6 +828,14 @@
       if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
     }
 
+    panel.querySelector("#wat-reset-position").addEventListener("click", () => {
+      stopDragging();
+      moved = false;
+      panel.style.removeProperty("left");
+      panel.style.removeProperty("top");
+      panel.style.removeProperty("right");
+    });
+
     handle.addEventListener("pointerdown", (event) => {
       if (drag || !event.isPrimary || event.button !== 0 || event.target.closest("button")) return;
       const rect = panel.getBoundingClientRect();
@@ -698,20 +857,15 @@
     window.addEventListener("resize", keepInView);
     if (typeof ResizeObserver === "function") new ResizeObserver(keepInView).observe(panel);
 
-    panel.querySelector("#wat-reset-position").addEventListener("click", () => {
-      stopDragging();
-      moved = false;
-      panel.style.removeProperty("left");
-      panel.style.removeProperty("top");
-      panel.style.removeProperty("right");
-    });
   }
 
   const list = createPanel();
   log("", "Interface iniciada; aguardando a ponte WA-JS");
   const bridgeStatusTimeout = setTimeout(() => {
+    bridgeReady = false;
     document.querySelector("#wat-wa-status").textContent =
       "WhatsApp: ponte sem resposta. Atualize e habilite o WA Bridge no Tampermonkey e recarregue a página.";
+    updateSystemIndicator();
   }, 5000);
 
   function updateHistorySelection() {
@@ -1019,6 +1173,128 @@
     );
   }
 
+  function settingsMessage(text, error = false) {
+    const message = document.querySelector("#wat-settings-message");
+    message.textContent = text;
+    message.dataset.error = String(error);
+  }
+
+  function updateSettingsControls() {
+    for (const id of ["#wat-model", "#wat-language", "#wat-settings-save"]) {
+      document.querySelector(id).disabled = !settingsAvailable || settingsLoading || settingsSaving;
+    }
+    document.querySelector("#wat-settings-save").textContent = settingsSaving ? "Salvando…" : "Salvar alterações";
+    document.querySelector("#wat-settings-refresh").disabled = settingsLoading || settingsSaving;
+  }
+
+  async function settingsRequest(method, settings) {
+    const response = await gmRequest({ method, url: SETTINGS_URL, timeout: 8000,
+      ...(settings ? { headers: { "Content-Type": "application/json" }, data: JSON.stringify(settings) } : {}) });
+    const result = typeof response.response === "string" ? JSON.parse(response.response) : response.response;
+    if (response.status === 404) throw new Error("Reinicie o backend para disponibilizar as configurações desta atualização.");
+    if (response.status !== 200 || !result?.success) throw new Error(result?.error || "Não foi possível acessar as configurações do backend.");
+    return result;
+  }
+
+  function updateSystemIndicator() {
+    const indicator = document.querySelector("#wat-system-status");
+    const online = backendOnline && bridgeReady && !workerFailed;
+    indicator.dataset.state = online ? "online" : "offline";
+    const value = id => document.querySelector(`#${id}`)?.textContent || "—";
+    const details = [
+      online ? "Sistema conectado" : "Sistema com pendências",
+      `Backend: ${value("wat-connection")}`,
+      value("wat-wa-status"),
+      `Motor: ${value("wat-worker-status")}`,
+      `Modelo: ${value("wat-current-model")}`,
+      `Execução: ${value("wat-device")}`,
+      `Solicitações pendentes: ${value("wat-pending")}`,
+      `Ativo há: ${value("wat-uptime")}`,
+      "", "Versões",
+      `Painel: ${UI_VERSION} · Ponte: ${value("wat-bridge-version")}`,
+      `WA-JS: ${value("wat-wajs-version")} · Backend: ${value("wat-backend-version")}`,
+      `Node.js: ${value("wat-node-version")} · Python: ${value("wat-python-version")}`,
+      `faster-whisper: ${value("wat-whisper-version")}`,
+    ].join("\n");
+    indicator.title = details;
+    indicator.setAttribute("aria-label", details);
+  }
+
+  function renderSystemStatus(status) {
+    const worker = status.worker || {};
+    workerFailed = worker.status === "error";
+    const states = { ready: "Pronto", loading: "Carregando modelo…", stopped: "Aguardando o próximo áudio", error: "Erro no motor", "not-required": "Modo de teste (mock)" };
+    document.querySelector("#wat-worker-status").textContent = worker.lastError || states[worker.status] || "Indisponível";
+    document.querySelector("#wat-current-model").textContent = status.settings?.model || worker.model || "—";
+    document.querySelector("#wat-device").textContent = [worker.device, worker.computeType].filter(Boolean).join(" · ") || "—";
+    document.querySelector("#wat-pending").textContent = String(status.pendingRequests ?? 0);
+    if (status.uptimeSeconds !== undefined) {
+      const seconds = Math.floor(status.uptimeSeconds);
+      document.querySelector("#wat-uptime").textContent = `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}min ${seconds % 60}s`;
+    }
+    if (status.version) document.querySelector("#wat-backend-version").textContent = status.version;
+    updateSystemIndicator();
+  }
+
+  async function loadSettings() {
+    if (settingsLoading || settingsSaving) return;
+    settingsLoading = true;
+    updateSettingsControls();
+    settingsMessage("Carregando configurações…");
+    try {
+      const result = await settingsRequest("GET");
+      if (!result.settings || !Array.isArray(result.options?.models) || !Array.isArray(result.options?.languages)) {
+        throw new Error("O backend precisa ser atualizado para oferecer estas configurações.");
+      }
+      for (const [id, options, selected] of [
+        ["#wat-model", result.options.models, result.settings.model],
+        ["#wat-language", result.options.languages, result.settings.language],
+      ]) {
+        const select = document.querySelector(id);
+        const previous = settingsDirty ? select.value : selected;
+        select.replaceChildren(...options.map(item => {
+          const option = document.createElement("option");
+          option.value = item.value; option.textContent = item.label;
+          return option;
+        }));
+        select.value = options.some(item => item.value === previous) ? previous : selected;
+      }
+      for (const [id, key] of [["backend", "backend"], ["node", "node"], ["python", "python"], ["whisper", "fasterWhisper"]]) {
+        document.querySelector(`#wat-${id}-version`).textContent = result.versions?.[key] || "Indisponível";
+      }
+      settingsAvailable = true;
+      backendOnline = true;
+      renderSystemStatus({ ...result.status, settings: result.settings });
+      settingsMessage(settingsDirty ? "Há alterações ainda não salvas." : "As preferências ficam salvas neste computador e valem para os próximos áudios.");
+    } catch (error) {
+      settingsAvailable = false;
+      settingsMessage(error.message, true);
+    } finally { settingsLoading = false; updateSettingsControls(); }
+    void refreshDiagnostics();
+  }
+
+  async function saveUserSettings() {
+    if (!settingsAvailable || settingsSaving || settingsLoading) return;
+    if (processingQueue || transcriptionQueue.length) {
+      settingsMessage("Aguarde a fila de transcrições terminar antes de alterar as configurações.", true);
+      return;
+    }
+    const settings = { model: document.querySelector("#wat-model").value, language: document.querySelector("#wat-language").value };
+    settingsSaving = true;
+    updateSettingsControls();
+    settingsMessage("Salvando configurações…");
+    try {
+      const result = await settingsRequest("POST", settings);
+      settingsDirty = false;
+      document.querySelector("#wat-model").value = result.settings.model;
+      document.querySelector("#wat-language").value = result.settings.language;
+      renderSystemStatus({ ...result.status, settings: result.settings });
+      settingsMessage("Configurações salvas. O modelo será carregado quando chegar o próximo áudio.");
+      void refreshDiagnostics();
+    } catch (error) { settingsMessage(error.message, true); }
+    finally { settingsSaving = false; updateSettingsControls(); void processQueue(); }
+  }
+
   async function refreshDiagnostics() {
     const indicator = document.querySelector("#wat-connection");
     const diagnostics = document.querySelector("#wat-diagnostics");
@@ -1029,6 +1305,8 @@
       if (lastServerUptime && result.status.uptimeSeconds < lastServerUptime) lastEventId = 0;
       lastServerUptime = result.status.uptimeSeconds;
       const worker = result.status.worker;
+      backendOnline = true;
+      renderSystemStatus(result.status);
       const workerLabel =
         worker.status === "loading"
           ? " · modelo carregando"
@@ -1039,6 +1317,7 @@
               : "";
       indicator.textContent = `Backend conectado${workerLabel}`;
       indicator.className = "online";
+      updateSystemIndicator();
       for (const event of result.events || []) {
         lastEventId = Math.max(lastEventId, event.id);
         const line = document.createElement("div");
@@ -1052,6 +1331,9 @@
     } catch (error) {
       indicator.textContent = "Backend desconectado";
       indicator.className = "offline";
+      backendOnline = false;
+      document.querySelector("#wat-worker-status").textContent = "Backend indisponível";
+      updateSystemIndicator();
     }
   }
 
@@ -1115,7 +1397,7 @@
   }
 
   async function processQueue() {
-    if (processingQueue) return;
+    if (processingQueue || settingsSaving) return;
     processingQueue = true;
     try {
       while (transcriptionQueue.length > 0) {
@@ -1168,9 +1450,13 @@
     if (event.data.action === "bridge-status" || event.data.action === "ready") {
       clearTimeout(bridgeStatusTimeout);
       const ready = event.data.action === "ready" || event.data.ready;
+      bridgeReady = Boolean(ready);
+      document.querySelector("#wat-bridge-version").textContent = event.data.bridgeVersion || "Versão anterior; atualize a ponte";
+      if (event.data.version) document.querySelector("#wat-wajs-version").textContent = event.data.version;
       document.querySelector("#wat-wa-status").textContent = ready
         ? `WhatsApp: ponte pronta${event.data.bridgeVersion ? ` (${event.data.bridgeVersion})` : " · atualize o WA Bridge"}`
         : "WhatsApp: ponte ativa, aguardando o carregamento do WhatsApp…";
+      updateSystemIndicator();
     }
 
     if (event.data.action === "conversation-history-result") {

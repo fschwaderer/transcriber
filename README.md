@@ -61,18 +61,30 @@ Novos áudios recebidos também entram na fila automaticamente enquanto o WhatsA
 
 Para mensagens mais antigas, abra a conversa e use **Buscar mais antigos**. Cada busca consulta até 100 mensagens, incluindo texto, então um lote sem áudios não significa que o histórico terminou. O programa não recupera mídias apagadas ou indisponíveis no WhatsApp.
 
-Você pode arrastar o cabeçalho do painel para mudar sua posição. Use **↺** para restaurar a posição. A busca pode ser recolhida e ter sua altura ajustada com **−** e **+**. O botão **Logs** mostra informações úteis quando algo falha.
+Você pode arrastar o cabeçalho do painel para mudar sua posição. O botão **↺**, no cabeçalho, restaura a posição original. A busca pode ser recolhida e ter sua altura ajustada com **−** e **+**. Clique na **engrenagem ⚙** para abrir as configurações em um painel centralizado, consultar o status, ver logs e limpar transcrições.
+
+O ícone **Exportar conversa** fica no cabeçalho, logo após **↺**. A bolinha ao lado de **Transcritor** fica verde quando backend e ponte estão conectados, e vermelha quando há falha ou conexão pendente. Passe o mouse sobre ela para consultar o status completo do sistema, incluindo motor, modelo, solicitações, tempo ativo e versões.
+
+## Configurações pela engrenagem
+
+O botão **⚙** abre **Configurações** no centro da página, independentemente de onde o painel lateral estiver. Escolha o **modelo de transcrição** e o **idioma dos áudios** e clique em **Salvar alterações**. A seleção inclui tiny, base, small, medium, large-v3 e large-v3-turbo. Também é possível detectar o idioma automaticamente. Modelos maiores usam mais memória; a primeira transcrição com um modelo novo pode exigir download.
+
+As preferências ficam em `server/.settings.json`, neste computador, e têm prioridade sobre modelo e idioma do `.env`. Elas são mantidas ao reiniciar. A troca do modelo encerra o motor anterior e carrega o novo no próximo áudio. Não é possível alterar as preferências durante uma transcrição; aguarde a fila terminar.
+
+O mesmo painel reúne o status do backend, ponte, motor, modelo atual, dispositivo, solicitações pendentes e tempo ativo; versões do painel, ponte, WA-JS, backend, Node.js, Python e Whisper; e os controles de logs e limpeza. **Atualizar status** consulta novamente essas informações. Use **Fechar**, **Esc** ou clique fora para voltar ao WhatsApp.
+
+Esta opção exige o painel **0.6.2** e o backend **0.2.0**. Depois de atualizar os arquivos locais, reinicie o backend com `stop-transcriber.bat` e `start-transcriber.bat`, atualize o painel no Tampermonkey e recarregue o WhatsApp Web. A ponte **0.4.2** continua compatível.
 
 ## Exportar uma conversa com textos e áudios
 
-Mantenha os dois scripts do Tampermonkey atualizados: **WhatsApp Audio Transcriber 0.5.3** e **WA Bridge 0.4.2**. Após salvar os dois, recarregue o WhatsApp Web. O cabeçalho mostra separadamente o estado do backend e o da ponte do WhatsApp; para buscar mensagens, deve aparecer **WhatsApp: ponte pronta (0.4.2)**. Uma ponte ausente ou ainda carregando é indicada nesse mesmo local.
+Mantenha os dois scripts do Tampermonkey atualizados: **WhatsApp Audio Transcriber 0.6.2** e **WA Bridge 0.4.2**. Após salvar os dois, recarregue o WhatsApp Web. Em **⚙ → Status do sistema**, o estado do backend aparece separado da ponte do WhatsApp; para buscar mensagens, deve aparecer **WhatsApp: ponte pronta (0.4.2)**. Uma ponte ausente ou ainda carregando é indicada nesse mesmo local.
 
 Se aparecer **ponte sem resposta**, o painel não conseguiu se comunicar com o script do WhatsApp; isso não depende do Python. As versões acima usam eventos do documento para atravessar os contextos isolados do Tampermonkey. A busca mostra se a ponte recebeu o pedido e se já está consultando o histórico. Se não houver confirmação, ela encerra em cinco segundos e libera os botões para tentar novamente.
 
 Depois de atualizar o programa, **atualize os dois scripts no Tampermonkey** pelos links da etapa 3 e recarregue o WhatsApp Web. Esta função não exige reinstalar Python ou Node.js.
 
 1. Abra a conversa que deseja exportar, individual ou em grupo.
-2. No painel, abra **Exportar conversa (textos e áudios)**.
+2. No cabeçalho, clique no ícone **Exportar conversa**, logo após **↺**. Todas as opções de busca e download ficam em um novo painel no centro da página. Fechar esse painel não apaga o histórico carregado nem interrompe a busca; use **Parar busca** para interrompê-la.
 3. Clique em **Carregar mensagens** para buscar as últimas 100 mensagens. **Carregar mais antigas** busca o próximo lote. Você também pode clicar diretamente em **Exportar TXT** ou **Exportar com negrito (HTML)**: se ainda não carregou mensagens, o primeiro lote é carregado automaticamente. Conversas sem áudios também podem ser exportadas.
 4. Para buscar o máximo retroativo, clique em **Carregar máximo retroativo**. A busca continua em lotes até o WhatsApp não fornecer novas mensagens. O painel mostra a quantidade carregada. Isso pode demorar em conversas grandes.
 5. Você pode clicar em **Parar busca**; o lote em andamento termina e o conteúdo já carregado fica disponível para exportar ou continuar depois. Se houver erro ou demora excessiva, as mensagens dos lotes anteriores também são preservadas.
